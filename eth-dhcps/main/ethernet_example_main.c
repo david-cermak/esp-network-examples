@@ -13,7 +13,8 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
-
+#include "esp_wifi.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "eth_example";
 
@@ -47,9 +48,18 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
-static esp_err_t eth_input_to_netif(esp_eth_handle_t eth_handle, uint8_t *buffer, uint32_t length, void *priv)
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                               int32_t event_id, void* event_data)
 {
-    return esp_netif_receive((esp_netif_t *)priv, buffer, length, NULL);
+    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d",
+                 MAC2STR(event->mac), event->aid);
+    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d",
+                 MAC2STR(event->mac), event->aid);
+    }
 }
 
 /** Event handler for IP_EVENT_ETH_GOT_IP */
@@ -67,12 +77,28 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "~~~~~~~~~~~");
 }
 
+void wifi_init_softap(void);
+
+static esp_err_t eth_input_to_netif(esp_eth_handle_t eth_handle, uint8_t *buffer, uint32_t length, void *priv)
+{
+    return esp_netif_receive((esp_netif_t *)priv, buffer, length, NULL);
+}
+
 void app_main(void)
 {
+    //Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     // Initialize TCP/IP network interface (should be called only once in application)
     ESP_ERROR_CHECK(esp_netif_init());
     // Create default event loop that running in background
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    wifi_init_softap();
 
 #if CONFIG_EXAMPLE_USE_INTERNAL_ETHERNET
     // Init MAC and PHY configs to default
@@ -99,10 +125,20 @@ void app_main(void)
     esp_eth_handle_t eth_handle = NULL;
     ESP_ERROR_CHECK(esp_eth_driver_install(&config, &eth_handle));
     /* attach Ethernet driver to TCP/IP stack */
-    esp_netif_inherent_config_t inherent_eth_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_AP();
+    esp_netif_inherent_config_t basic_eth_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_AP();
+    esp_netif_ip_info_t eth_dhcps_ranges = {
+            .ip = { .addr = ESP_IP4TOADDR( 192, 168, 8, 1) },
+            .gw = { .addr = ESP_IP4TOADDR( 192, 168, 8, 1) },
+            .netmask = { .addr = ESP_IP4TOADDR( 255, 255, 255, 0) },
+    };
+    basic_eth_config.ip_info = &eth_dhcps_ranges;
+    basic_eth_config.if_key = "ETH_2";
+    basic_eth_config.if_desc = "eth-dhcp-server";
+    basic_eth_config.route_prio = 50;
+
     esp_netif_driver_ifconfig_t driver_eth_config = {   .handle =  eth_handle,
                                                         .transmit = esp_eth_transmit };
-    esp_netif_config_t cfg = { .base = &inherent_eth_config,
+    esp_netif_config_t cfg = { .base = &basic_eth_config,
                                .driver = &driver_eth_config,
                                .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH };
     esp_netif_t *eth_netif = esp_netif_new(&cfg);
@@ -128,4 +164,34 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_eth_start(eth_handle));
 #endif // CONFIG_EXAMPLE_USE_INTERNAL_ETHERNET
 
+}
+
+void wifi_init_softap(void)
+{
+    esp_netif_create_default_wifi_ap();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    wifi_config_t wifi_config = {
+            .ap = {
+                    .ssid = "myssid",
+                    .ssid_len = strlen("myssid"),
+                    .password = "mypassword",
+                    .max_connection = 4,
+                    .authmode = WIFI_AUTH_WPA_WPA2_PSK
+            },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "wifi_init_softap finished.");
 }
