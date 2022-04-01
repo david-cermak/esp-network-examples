@@ -15,6 +15,7 @@
 #include "sdkconfig.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "esp_mac.h"
 
 static const char *TAG = "eth_example";
 
@@ -84,6 +85,11 @@ static esp_err_t eth_input_to_netif(esp_eth_handle_t eth_handle, uint8_t *buffer
     return esp_netif_receive((esp_netif_t *)priv, buffer, length, NULL);
 }
 
+static void eth_l2_free(void *h, void* buffer)
+{
+    free(buffer);
+}
+
 void app_main(void)
 {
     //Initialize NVS
@@ -107,9 +113,10 @@ void app_main(void)
 
     phy_config.phy_addr = CONFIG_EXAMPLE_ETH_PHY_ADDR;
     phy_config.reset_gpio_num = CONFIG_EXAMPLE_ETH_PHY_RST_GPIO;
-    mac_config.smi_mdc_gpio_num = CONFIG_EXAMPLE_ETH_MDC_GPIO;
-    mac_config.smi_mdio_gpio_num = CONFIG_EXAMPLE_ETH_MDIO_GPIO;
-    esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
+    eth_esp32_emac_config_t esp32_emac_config = ETH_ESP32_EMAC_DEFAULT_CONFIG();
+    esp32_emac_config.smi_mdc_gpio_num = CONFIG_EXAMPLE_ETH_MDC_GPIO;
+    esp32_emac_config.smi_mdio_gpio_num = CONFIG_EXAMPLE_ETH_MDIO_GPIO;
+    esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&esp32_emac_config, &mac_config);
 #if CONFIG_EXAMPLE_ETH_PHY_IP101
     esp_eth_phy_t *phy = esp_eth_phy_new_ip101(&phy_config);
 #elif CONFIG_EXAMPLE_ETH_PHY_RTL8201
@@ -137,7 +144,8 @@ void app_main(void)
     basic_eth_config.route_prio = 50;
 
     esp_netif_driver_ifconfig_t driver_eth_config = {   .handle =  eth_handle,
-                                                        .transmit = esp_eth_transmit };
+                                                        .transmit = esp_eth_transmit,
+                                                        .driver_free_rx_buffer = eth_l2_free};
     esp_netif_config_t cfg = { .base = &basic_eth_config,
                                .driver = &driver_eth_config,
                                .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH };
@@ -152,6 +160,7 @@ void app_main(void)
     ESP_LOGI(TAG, "%02x:%02x:%02x:%02x:%02x:%02x", eth_mac[0], eth_mac[1],
              eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]);
     esp_netif_set_mac(eth_netif, eth_mac);
+    ESP_LOGI(TAG, "eth_netif=%p", eth_netif);
 
 #endif //CONFIG_EXAMPLE_USE_INTERNAL_ETHERNET
 
@@ -168,7 +177,8 @@ void app_main(void)
 
 void wifi_init_softap(void)
 {
-    esp_netif_create_default_wifi_ap();
+    esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+    ESP_LOGI(TAG, "ap_netif=%p", ap_netif);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
