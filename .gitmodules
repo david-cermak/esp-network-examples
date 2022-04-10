@@ -1,0 +1,3 @@
+[submodule "lwip-intro/lwip"]
+	path = lwip-intro/lwip
+	url = git@github.com:david-cermak/esp-lwip.git
