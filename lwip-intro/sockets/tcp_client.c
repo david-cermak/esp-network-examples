@@ -11,13 +11,40 @@
 #include <arpa/inet.h>
 
 
-#define ESP_LOGI(tag, fmt, ...) do { printf("(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
-#define ESP_LOGE(tag, fmt, ...) do { printf("ERROR(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
-#define HOST_IP_ADDR "192.168.1.1"
+// #define ESP_LOGI(tag, fmt, ...) do { printf("(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
+// #define ESP_LOGE(tag, fmt, ...) do { printf("ERROR(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
+#define ESP_LOGI(tag, fmt, ...)
+#define ESP_LOGE(tag, fmt, ...)
+// #define HOST_IP_ADDR "192.168.1.1"
+#define HOST_IP_ADDR "0.0.0.0"
 #define PORT 3333
 
 static const char *TAG = "tcp-client";
 static const char *payload = "Message from ESP32 ";
+
+static void tcp_bind_test(void)
+{
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+
+    for (int i = 0; i< 1000; ++i) {
+        dest_addr.sin_port = htons(PORT + i);
+        int sock =  socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+            break;
+        }
+        int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6));
+        if (err != 0) {
+            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+            break;
+        }
+        ESP_LOGI(TAG, "%d: Successfully bound on port %d", i, PORT + i);
+        usleep(10000);
+    }
+
+}
 
 static void tcp_client_task(void *pvParameters)
 {
@@ -78,5 +105,7 @@ static void tcp_client_task(void *pvParameters)
 
 int main (void)
 {
-    tcp_client_task(0);
+    // tcp_client_task(0);
+    tcp_bind_test();
+    return 0;
 }

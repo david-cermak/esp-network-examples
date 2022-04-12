@@ -26,7 +26,7 @@ paginate: true
 *TCP socket example*
 
 ```
-sudo tshark -i lo -f "tcp port 3333"
+sudo tshark -i lo/tap0 -f "tcp port 3333"
 nc -l 3333
 ```
 
@@ -65,6 +65,75 @@ valgrind --tool=massif --time-unit=ms  --stacks=yes ./example_app
 
 ---
 
+```
+--------------------------------------------------------------------------------
+Command:            ./example_app
+Massif arguments:   --threshold=0.1 --time-unit=ms --stacks=yes
+ms_print arguments: massif.out.156121
+--------------------------------------------------------------------------------
+
+
+    MB
+1.431^                                                                     :::
+     |                                                                 @@@#:::
+     |                                                            @@@@@@@@#:::
+     |                                                         @@@@@@@@@@@#:::
+     |                                                    @@@@@@@@@@@@@@@@#:::
+     |                                                @@@@@@@@ @@@@@@@@@@@#:::
+     |                                             @::@ @@@@@@ @@@@@@@@@@@#:::
+     |                                         @@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                                     @::@@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                                  @@@@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                              ::::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                           @@@: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                       :::@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                    @@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |                 @@@@@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |              @@@@@@@@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |           :@@@@@@@@@@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |        @@@:@ @@@@@@@@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |      ::@@@:@ @@@@@@@@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+     |    ::::@@@:@ @@@@@@@@@: :@@ @: ::@ @@: @@@::@::@ @@@@@@ @@@@@@@@@@@#:::
+   0 +----------------------------------------------------------------------->s
+     0                                                                   24.96
+
+Number of snapshots: 81
+ Detailed snapshots: [7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 23, 24, 25, 29, 30, 31, 33, 34, 3
+5, 38, 41, 42, 43, 44, 45, 46, 47, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76 (peak)]
+
+--------------------------------------------------------------------------------
+  n       time(ms)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+  0              0                0                0             0            0
+  1            375            5,488                0             0        5,488
+  2            793           42,784           39,688         1,368        1,728
+  3          1,040           68,304           64,304         2,184        1,816
+  4          1,468          110,128          104,848         3,528        1,752
+  5          2,082          160,960          154,080         5,160        1,720
+  6          2,444          193,952          185,936         6,216        1,800
+  7          2,933          234,096          224,648         7,480        1,968
+95.96% (224,648B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->70.45% (164,920B) 0x16B54B: sys_mbox_new (sys_arch.c:249)
+| ->70.00% (163,856B) 0x144A24: netconn_alloc (api_msg.c:770)
+| | ->70.00% (163,856B) 0x141BF6: netconn_new_with_proto_and_callback (api_lib.c:155)
+| |   ->70.00% (163,856B) 0x14AF9B: lwip_socket (sockets.c:1720)
+| |     ->70.00% (163,856B) 0x10B986: tcp_bind_test (socket_examples.c:103)
+| |       ->70.00% (163,856B) 0x10F72D: main (socket_examples.c:941)
+| |         
+| ->00.45% (1,064B) in 1+ places, all below ms_print's threshold (01.00%)
+| 
+->25.22% (59,040B) 0x16BC75: sys_sem_new_internal (sys_arch.c:450)
+| ->06.32% (14,784B) 0x16B582: sys_mbox_new (sys_arch.c:254)
+| | ->06.27% (14,688B) 0x144A24: netconn_alloc (api_msg.c:770)
+| | | ->06.27% (14,688B) 0x141BF6: netconn_new_with_proto_and_callback (api_lib.c:155)
+| | |   ->06.27% (14,688B) 0x14AF9B: lwip_socket (sockets.c:1720)
+| | |     ->06.27% (14,688B) 0x10B986: tcp_bind_test (socket_examples.c:103)
+| | |       ->06.27% (14,688B) 0x10F72D: main (socket_examples.c:941)
+| | |         
+| | ->00.04% (96B) in 1+ places, all below ms_print's threshold (01.00%)
+| | 
+```
+
 # IDF port
 
 - Used/supported API
@@ -92,6 +161,7 @@ valgrind --tool=massif --time-unit=ms  --stacks=yes ./example_app
 
 #  lwIP and esp-lwip
 
+* show statistics
 ## Demo
 
 * close/shutdown 
@@ -125,3 +195,11 @@ valgrind --tool=massif --time-unit=ms  --stacks=yes ./example_app
 * Converge to upstream
 * Focus on host tests
 * Evaluate, measure, test
+
+---
+
+# Takeaways
+
+* DNS servers are global
+* No deinit
+* 

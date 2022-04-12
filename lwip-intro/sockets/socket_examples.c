@@ -1,5 +1,5 @@
 
-#include "socket_examples.h"
+// #include "socket_examples.h"
 
 #include "lwip/opt.h"
 
@@ -66,13 +66,20 @@ typedef struct _xx
   LWIP_ASSERT("buf4 fail", !memcmp((sets)->buf4, cmpbuf, 8)); \
 }while(0)
 
-static ip_addr_t dstaddr;
+// static ip_addr_t dstaddr;
+#define NO_ESP_LOGS
+#ifdef NO_ESP_LOGS
+#define ESP_LOGI(tag, fmt, ...)
+#define ESP_LOGE(tag, fmt, ...)
+#else
+static const char *TAG = "tcp-client";
 #define ESP_LOGI(tag, fmt, ...) do { printf("(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
 #define ESP_LOGE(tag, fmt, ...) do { printf("ERROR(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
-#define HOST_IP_ADDR "192.168.1.1"
+#endif
+// #define HOST_IP_ADDR "192.168.1.1"
+#define HOST_IP_ADDR "0.0.0.0"
 #define PORT 3333
 
-static const char *TAG = "tcp-client";
 static const char *payload = "Message from ESP32 ";
 
 u32_t sio_tryread(sio_fd_t fd, u8_t* data, u32_t len);
@@ -84,11 +91,37 @@ u32_t sio_tryread(sio_fd_t fd, u8_t* data, u32_t len)
   return 0;  
 }
 
-static void tcp_client_task(void *pvParameters)
+void tcp_bind_test(void);
+void tcp_bind_test(void)
+{
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+
+    for (int i = 0; i< 1000; ++i) {
+        dest_addr.sin_port = htons(PORT + i);
+        int sock =  socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+            break;
+        }
+        int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6));
+        if (err != 0) {
+            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+            break;
+        }
+        ESP_LOGI(TAG, "%d: Successfully bound on port %d", i, PORT + i);
+        usleep(1000);
+        close(sock);
+    }
+
+}
+
+void tcp_client_task(void *pvParameters);
+void tcp_client_task(void *pvParameters)
 {
   LWIP_UNUSED_ARG(pvParameters);
     char rx_buffer[128];
-    char host_ip[] = HOST_IP_ADDR;
     int run = 1;
 
     while(run)
@@ -130,7 +163,7 @@ static void tcp_client_task(void *pvParameters)
             // Data received
             else {
                 rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
-                ESP_LOGI(TAG, "Received %d bytes from %s:", len, host_ip);
+                ESP_LOGI(TAG, "Received %d bytes from %s:", len, HOST_IP_ADDR);
                 ESP_LOGI(TAG, "%s", rx_buffer);
             }
 
@@ -739,36 +772,37 @@ sockex_testtwoselects(void *arg)
 }
 #endif 
 
-#if !SOCKET_EXAMPLES_RUN_PARALLEL
-static void
-socket_example_test(void* arg)
-{
-  LWIP_UNUSED_ARG(arg);
-  tcp_client_task(0);
-  sys_msleep(1000);
-  printf("all tests done, thread ending\n");
-}
-#endif
+// #if !SOCKET_EXAMPLES_RUN_PARALLEL
+// static void
+// socket_example_test(void* arg)
+// {
+//   LWIP_UNUSED_ARG(arg);
+//   // tcp_client_task(0);
+//   sys_msleep(1000);
+//   printf("all tests done, thread ending\n");
+// }
+// #endif
 
-void socket_examples_init(void)
-{
-  int addr_ok;
-#if LWIP_IPV6
-  IP_SET_TYPE_VAL(dstaddr, IPADDR_TYPE_V6);
-  addr_ok = ip6addr_aton(SOCK_TARGET_HOST6, ip_2_ip6(&dstaddr));
-#else /* LWIP_IPV6 */
-  IP_SET_TYPE_VAL(dstaddr, IPADDR_TYPE_V4);
-  addr_ok = ip4addr_aton(SOCK_TARGET_HOST4, ip_2_ip4(&dstaddr));
-#endif /* LWIP_IPV6 */
-  LWIP_ASSERT("invalid address", addr_ok);
-#if SOCKET_EXAMPLES_RUN_PARALLEL
-  sys_thread_new("sockex_nonblocking_connect", sockex_nonblocking_connect, &dstaddr, 0, 0);
-  sys_thread_new("sockex_testrecv", sockex_testrecv, &dstaddr, 0, 0);
-  sys_thread_new("sockex_testtwoselects", sockex_testtwoselects, &dstaddr, 0, 0);
-#else
-  sys_thread_new("socket_example_test", socket_example_test, &dstaddr, 0, 0);
-#endif
-}
+// void socket_examples_init(void);
+// void socket_examples_init(void)
+// {
+//   int addr_ok;
+// #if LWIP_IPV6
+//   IP_SET_TYPE_VAL(dstaddr, IPADDR_TYPE_V6);
+//   addr_ok = ip6addr_aton(SOCK_TARGET_HOST6, ip_2_ip6(&dstaddr));
+// #else /* LWIP_IPV6 */
+//   IP_SET_TYPE_VAL(dstaddr, IPADDR_TYPE_V4);
+//   addr_ok = ip4addr_aton(SOCK_TARGET_HOST4, ip_2_ip4(&dstaddr));
+// #endif /* LWIP_IPV6 */
+//   LWIP_ASSERT("invalid address", addr_ok);
+// #if SOCKET_EXAMPLES_RUN_PARALLEL
+//   sys_thread_new("sockex_nonblocking_connect", sockex_nonblocking_connect, &dstaddr, 0, 0);
+//   sys_thread_new("sockex_testrecv", sockex_testrecv, &dstaddr, 0, 0);
+//   sys_thread_new("sockex_testtwoselects", sockex_testtwoselects, &dstaddr, 0, 0);
+// #else
+//   sys_thread_new("socket_example_test", socket_example_test, &dstaddr, 0, 0);
+// #endif
+// }
 
 #ifndef USE_DEFAULT_ETH_NETIF
 #define USE_DEFAULT_ETH_NETIF 1
@@ -904,7 +938,8 @@ int main(void)
   sys_sem_wait(&init_sem);
   sys_sem_free(&init_sem);
 
-  tcp_client_task(0);
+  // tcp_client_task(0);
+  tcp_bind_test();
   sys_msleep(1000);
   printf("all tests done, thread ending\n");
 
