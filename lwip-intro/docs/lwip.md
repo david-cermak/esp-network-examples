@@ -38,10 +38,41 @@ nc -l 3333
 
 # lwIP overview
 
-* supported features
-* used by IDF
-* structure -> netif -> IP -> UDP TCP, pbufs, memory, pcb
+* [Supported protocols and features](https://github.com/espressif/esp-lwip/blob/76303df2386902e0d7873be4217f1d9d1b50f982/README#L14-L35)
+* Features and configs used by IDF
+* Layering: `netif` -> `IP` -> `UDP/TCP` -> `apps`
+* Structures: pbufs, memp, pcb
 * threads, ports, core-locking
+---
+
+# lwIP features -- Used in IDF
+
+  * IP (Internet Protocol, IPv4 and IPv6), ICMP, IGMP, TCP/UDP
+  * DHCP, AutoIP, DNS (mDNS)
+  * MLD (Multicast listener discovery for IPv6), ND (Neighbor discovery and stateless address autoconfiguration for IPv6), Stateless DHCPv6
+  * ~raw/native API for enhanced performance~
+  * ~Optional~ Berkeley-like socket API
+  * ~TLS: optional layered TCP ("altcp") for nearly transparent TLS for any TCP-based protocol (ported to mbedTLS) (see changelog for more info)~
+  * PPPoS and ~PPPoE~ (Point-to-point protocol over Serial/Ethernet)
+  * ~6LoWPAN (via IEEE 802.15.4, BLE or ZEP)~
+---
+
+# lwIP structures
+
+* Packet buffers: pbufs
+  - support of chaining, rewinding headers
+  - types: (`PBUF_RAM`, `PBUF_ROM`, `PBUF_REF`, `PBUF_POOL`)
+* Memory pools (`LWIP_MEMPOOL`, used in PPPoS)
+* Protocol control block (`tcp_pcb`, `udp_pcb`, `ip_pcb`, `raw_pcb`)
+  - e.g. [common/IP related PCB members](https://github.com/espressif/esp-lwip/blob/76303df2386902e0d7873be4217f1d9d1b50f982/src/include/lwip/ip.h#L72-L89)
+
+---
+# lwIP contrib
+
+## ports, addons, examples, tests
+
+* [FreeRTOS port](https://github.com/lwip-tcpip/lwip/tree/master/contrib/ports/freertos)
+* [Addons](https://github.com/lwip-tcpip/lwip/tree/master/contrib/addons)
 
 ---
 
@@ -202,4 +233,5 @@ Number of snapshots: 81
 
 * DNS servers are global
 * No deinit
-* 
+* timeouts (connect, NULL-tv)
+
