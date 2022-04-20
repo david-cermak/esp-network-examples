@@ -67,7 +67,7 @@ typedef struct _xx
 }while(0)
 
 // static ip_addr_t dstaddr;
-#define NO_ESP_LOGS
+// #define NO_ESP_LOGS
 #ifdef NO_ESP_LOGS
 #define ESP_LOGI(tag, fmt, ...)
 #define ESP_LOGE(tag, fmt, ...)
@@ -76,8 +76,8 @@ static const char *TAG = "tcp-client";
 #define ESP_LOGI(tag, fmt, ...) do { printf("(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
 #define ESP_LOGE(tag, fmt, ...) do { printf("ERROR(%s): ", tag); printf(fmt, ##__VA_ARGS__); printf("\n"); } while(0)
 #endif
-// #define HOST_IP_ADDR "192.168.1.1"
-#define HOST_IP_ADDR "0.0.0.0"
+#define HOST_IP_ADDR "192.168.1.1"
+// #define HOST_IP_ADDR "0.0.0.0"
 #define PORT 3333
 
 static const char *payload = "Message from ESP32 ";
@@ -94,11 +94,12 @@ u32_t sio_tryread(sio_fd_t fd, u8_t* data, u32_t len)
 void tcp_bind_test(void);
 void tcp_bind_test(void)
 {
+    int sock_array[1000];
     struct sockaddr_in dest_addr;
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
 
-    for (int i = 0; i< 1000; ++i) {
+    for (int i = 0; i< 100; ++i) {
         dest_addr.sin_port = htons(PORT + i);
         int sock =  socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
@@ -111,11 +112,92 @@ void tcp_bind_test(void)
             break;
         }
         ESP_LOGI(TAG, "%d: Successfully bound on port %d", i, PORT + i);
-        usleep(1000);
-        close(sock);
+        usleep(10000);
+        sock_array[i] = sock;
+        // close(sock);
+    }
+    for (int i = 0; i< 100; ++i) {
+        usleep(10000);
+        close(sock_array[i]);
     }
 
 }
+
+void sock_echo(void *arg);
+
+void
+sock_echo(void *arg)
+{
+  int sock = *(int*)arg;
+  char rx_buffer[128];
+ESP_LOGE(TAG, "SOCKET= %d", sock);
+  while (1) {
+      int err = send(sock, payload, strlen(payload), 0);
+      if (err < 0) {
+          ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+          break;
+      }
+
+      int len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
+      // Error occurred during receiving
+      if (len < 0) {
+          ESP_LOGE(TAG, "recv failed: errno %d", errno);
+          break;
+      }
+      // Data received
+      else {
+          rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
+          ESP_LOGI(TAG, "Received %d bytes from %s:", len, HOST_IP_ADDR);
+          ESP_LOGI(TAG, "%s", rx_buffer);
+      }
+
+      usleep(200000);
+  }
+
+}
+
+void sock_data(void *arg);
+void
+sock_data(void *arg)
+{
+  int sock = *(int*)arg;
+
+
+    while (1) {
+      int err = send(sock, payload, strlen(payload), 0);
+      if (err < 0) {
+          ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+          break;
+      }
+      usleep(1000000);
+  }
+}
+
+
+int sock_connect(void);
+int sock_connect(void)
+{
+  struct sockaddr_in dest_addr;
+  dest_addr.sin_family = AF_INET;
+  dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+  dest_addr.sin_port = htons(PORT);
+  ESP_LOGI(TAG, "CREATE SOCKET!!!");
+  int sock =  socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+      ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+      return -1;
+  }
+  ESP_LOGI(TAG, "Socket created, connecting to %s:%d", HOST_IP_ADDR, PORT);
+
+  int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6));
+  if (err != 0) {
+      ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
+      return -1;
+  }
+  ESP_LOGI(TAG, "Successfully connected");
+  return sock;
+}
+
 
 void tcp_client_task(void *pvParameters);
 void tcp_client_task(void *pvParameters)
@@ -138,7 +220,7 @@ void tcp_client_task(void *pvParameters)
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
             break;
         }
-        ESP_LOGI(TAG, "Socket created, connecting to %s:%d", host_ip, PORT);
+        ESP_LOGI(TAG, "Socket created, connecting to %s:%d", HOST_IP_ADDR, PORT);
 
         int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6));
         if (err != 0) {
@@ -938,10 +1020,19 @@ int main(void)
   sys_sem_wait(&init_sem);
   sys_sem_free(&init_sem);
 
+  // int sock = sock_connect();
+  // sys_thread_new("echo", sock_echo, &sock, 0, 0);
+  // sys_thread_new("data", sock_data, &sock, 0, 0);
+
   // tcp_client_task(0);
+  // sys_thread_new("sockex_select_waiter1", sockex_select_waiter, &h2, 0, 0);
+  // sys_msleep(100);
+
+
   tcp_bind_test();
-  sys_msleep(1000);
+  // sys_msleep(10000);
   printf("all tests done, thread ending\n");
+  lwip_socket_thread_cleanup();
 
 }
 

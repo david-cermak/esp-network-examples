@@ -109,8 +109,17 @@
 
 #define LWIP_DBG_TYPES_ON         (LWIP_DBG_ON|LWIP_DBG_TRACE|LWIP_DBG_STATE|LWIP_DBG_FRESH|LWIP_DBG_HALT)
 
+typedef struct sys_sem * sys_sem_t;
+sys_sem_t* sys_arch_netconn_sem_get(void);
+void sys_arch_netconn_sem_alloc(void);
+void sys_arch_netconn_sem_free(void);
+#define LWIP_NETCONN_THREAD_SEM_GET()   sys_arch_netconn_sem_get()
+#define LWIP_NETCONN_THREAD_SEM_ALLOC() sys_arch_netconn_sem_alloc()
+#define LWIP_NETCONN_THREAD_SEM_FREE()  sys_arch_netconn_sem_free()
 
 /* ---------- Memory options ---------- */
+#define MEM_LIBC_MALLOC                 1
+
 /* MEM_ALIGNMENT: should be set to the alignment of the CPU for which
    lwIP is compiled. 4 byte alignment -> define MEM_ALIGNMENT to 4, 2
    byte alignment -> define MEM_ALIGNMENT to 2. */
@@ -149,6 +158,8 @@ a lot of data that needs to be copied, this should be set high. */
    set to 0 if the application only will use the raw API. */
 /* MEMP_NUM_NETBUF: the number of struct netbufs. */
 #define MEMP_NUM_NETBUF         2
+#define LWIP_NETCONN_FULLDUPLEX         1
+#define LWIP_NETCONN_SEM_PER_THREAD     1
 /* MEMP_NUM_NETCONN: the number of struct netconns. */
 #define MEMP_NUM_NETCONN        1000
 /* MEMP_NUM_TCPIP_MSG_*: the number of struct tcpip_msg, which is used
