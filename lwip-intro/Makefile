@@ -29,7 +29,7 @@
 # Author: Adam Dunkels <adam@sics.se>
 #
 
-TEST_FILE:=sockets/socket_examples
+TEST_FILE?=sockets/socket_examples
 
 all compile: example_app
 .PHONY: all
@@ -54,6 +54,7 @@ $(TEST_FILE).o: $(TEST_FILE).c
 
 .depend: $(TEST_FILE).c default_netif.c $(LWIPFILES) $(APPFILES)
 	echo "$(CCDEP) $(CFLAGS) -MM $^ > .depend || rm -f .depend"
+	#$(CCDEP) $(CFLAGS) -MM $^ > .depend || rm -f .depend
 
 example_app: .depend $(LWIPLIBCOMMON) $(APPLIB) default_netif.o $(TEST_FILE).o
 	$(CC) $(CFLAGS) -o example_app default_netif.o $(TEST_FILE).o $(APPLIB) -Wl,--start-group  $(LWIPOBJS) -Wl,--end-group $(LDFLAGS)

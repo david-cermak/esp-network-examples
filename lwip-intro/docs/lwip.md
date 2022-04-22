@@ -244,6 +244,8 @@ Number of snapshots: 81
 | | 
 ```
 
+---
+
 # IDF port
 
 - Used/supported API
@@ -312,5 +314,58 @@ Number of snapshots: 81
 
 * DNS servers are global
 * No deinit
-* timeouts (connect, NULL-tv)
+* timeouts (connect, tv)
+
+---
+
+# Blocking sockets
+
+* Connect
+    - unable to configure timeout (need to switch to non-blocking)
+    - could set number of SYN retransmit, and initial RTO
+* Read: `SO_RCVTIMEO`
+* Write: `SO_SNDTIMEO` (writing to out buffers)
+
+---
+
+lwIP: RTO=1.5s, SYSRTX=12
+
+| | linux |  lwip  |
+|---|-----|-------|
+| connect |  2min | 18s |
+| read    | indef | indef |
+| SO_RCVTIMEO <br/> `.tv_usec = 0, .tv_sec = 0` | indef | indef |
+| SO_RCVTIMEO <br/> `.tv_usec = 1, .tv_sec = 0` | 1us | indef |
+| SO_RCVTIMEO <br/> `.tv_usec = 1000, .tv_sec = 0` | 1ms | 1ms |
+
+---
+
+| | linux |  lwip | esp-lwip |
+|---|-----|-------|----------|
+| close from another thread <br/> while connect in progress | blocks and closes | crashes | unblocks + closes |
+| shutdown from another thread <br/> while connect in progress | unblocks + closes | no action | no action  |
+| close from another thread <br/> while read in progress | blocks and closes | unblocks + closes | unblocks + closes |
+| shutdown from another thread <br/> while read in progress | unblocks + 0 bytes | unblocks + error | unblocks + error |
+
+
+---
+
+# Non blocking sockets
+
+* one thread is waiting on select
+* another thread shuts down or closes the socket
+
+Checking these conditions:
+* return code from `select()`
+* fdsets: read, error
+* return value and `errno` from subsequent `recv()`
+
+---
+
+| | linux |  lwip | esp-lwip |
+|---|-----|-------|----------|
+| close from another thread <br/> while select waiting for connection | blocks and closes | unblocks + closes | unblocks + closes |
+| shutdown from another thread <br/> while select waiting for connection | unblocks  + error | no action | no action |
+| close from another thread <br/> while select waiting for reading | blocks and closes | unblocks + error | unblocks + select error |
+| shutdown from another thread <br/> while select waiting for reading | unblocks + 0 bytes | unblocks + error | unblocks + error |
 

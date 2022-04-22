@@ -66,9 +66,11 @@
 
 #define LWIP_COMPAT_SOCKETS        1
 #define LWIP_SO_RCVTIMEO           1
+#define LWIP_SO_SNDTIMEO           1
 #define LWIP_SO_RCVBUF             1
 
-#define LWIP_TCPIP_CORE_LOCKING    1
+
+#define LWIP_TCPIP_CORE_LOCKING    0
 
 #define LWIP_NETIF_LINK_CALLBACK        1
 #define LWIP_NETIF_STATUS_CALLBACK      1
@@ -91,7 +93,7 @@
 #define DNS_DEBUG                  LWIP_DBG_OFF
 #define AUTOIP_DEBUG               LWIP_DBG_OFF
 #define DHCP_DEBUG                 LWIP_DBG_OFF
-#define IP_DEBUG                   LWIP_DBG_ON
+#define IP_DEBUG                   LWIP_DBG_OFF
 #define IP_REASS_DEBUG             LWIP_DBG_OFF
 #define ICMP_DEBUG                 LWIP_DBG_OFF
 #define IGMP_DEBUG                 LWIP_DBG_OFF
@@ -221,7 +223,8 @@ a lot of data that needs to be copied, this should be set high. */
 #define TCP_MAXRTX              12
 
 /* Maximum number of retransmissions of SYN segments. */
-#define TCP_SYNMAXRTX           4
+#define TCP_SYNMAXRTX           12
+#define LWIP_TCP_RTO_TIME       1500
 
 
 /* ---------- ARP options ---------- */
