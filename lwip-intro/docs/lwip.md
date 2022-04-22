@@ -369,3 +369,15 @@ Checking these conditions:
 | close from another thread <br/> while select waiting for reading | blocks and closes | unblocks + error | unblocks + select error |
 | shutdown from another thread <br/> while select waiting for reading | unblocks + 0 bytes | unblocks + error | unblocks + error |
 
+
+---
+
+# Timeouts
+
+* blocking timeouts (`SO_RCVTIMEO`, `SO_SNDTIMEO`)
+  - `struct timeval *tv = NULL;` -> `sockopt()` returns error
+  - `struct timeval *tv = { 0, 0 };` -> indefinitely
+     * **Warning!** LWIP rounds to `ms`!
+* non-blocking timeouts (select/poll)
+  - `struct timeval *tv = NULL;` -> blocks indefinitely
+  - `struct timeval *tv = { 0, 0 };` -> returns immediately
