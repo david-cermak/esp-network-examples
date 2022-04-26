@@ -49,11 +49,11 @@ nc -l 3333
   * IP (Internet Protocol, IPv4 and IPv6), ICMP, IGMP, TCP/UDP
   * DHCP, AutoIP, DNS (mDNS)
   * MLD (Multicast listener discovery for IPv6), ND (Neighbor discovery and stateless address autoconfiguration for IPv6), Stateless DHCPv6
-  * ~raw/native API for enhanced performance~
-  * ~Optional~ Berkeley-like socket API
-  * ~TLS: optional layered TCP ("altcp") for nearly transparent TLS for any TCP-based protocol (ported to mbedTLS) (see changelog for more info)~
-  * PPPoS and ~PPPoE~ (Point-to-point protocol over Serial/Ethernet)
-  * ~6LoWPAN (via IEEE 802.15.4, BLE or ZEP)~
+  * ~~raw/native API for enhanced performance~~
+  * ~~Optional~~ Berkeley-like socket API
+  * ~~TLS: optional layered TCP ("altcp") for nearly transparent TLS for any TCP-based protocol (ported to mbedTLS) (see changelog for more info)~~
+  * PPPoS and ~~PPPoE~~ (Point-to-point protocol over Serial/Ethernet)
+  * ~~6LoWPAN (via IEEE 802.15.4, BLE or ZEP)~~
 ---
 
 # lwIP structures
@@ -88,6 +88,12 @@ nc -l 3333
 | tcpip_init() | 4600 bytes | (thread, 220B mbox) |
 | sock_create() |  500 bytes | (mbox, mem pools, pcb) |
 | sock_write()  | 3908 bytes | (pbuf, tcp-segment) |
+---
+# Static memory breakout
+
+
+![width:30cm height:15cm](static_mem.png)
+
 
 ---
 
@@ -101,7 +107,6 @@ nc -l 3333
   - TCPIP thread stack size (`LWIP_TCPIP_TASK_STACK_SIZE`)
   
 ---
-
 # How light-weight lwIP is?
 
 
@@ -113,12 +118,17 @@ nc -l 3333
 # IDF port
 
 - Used/supported API
+    - socket API
+    - everything else via esp-netif
+    - core-locking
+- Configuration: performance vs. mem-usage
 - FreeRTOS
     - sys_arch
     - TLS
 - netif (ethernet, wifi, thread)
-- IDF apps: ping, sntp, dhcpserver
-- esp-netif
+- Apps
+    - ping, sntp, dhcp-server
+- (esp-netif)
 
 ---
 
@@ -126,9 +136,9 @@ nc -l 3333
 
 * Adjust various parameters
 * api-msg (close from another thread)
-* kill pcb in wait state(s)
+* kill `tcp_pcb` in wait state(s)
 * bugfixes
-* sys-timers on demand (IGMP, )
+* sys-timers on demand (IGMP, MLD6)
 * NAPT
 * DNS fallback server
 * IPv6 zoning
@@ -151,7 +161,8 @@ nc -l 3333
   - initial RTO
   - number of retransmits
 * LWIP hooks
-* LWIP stats
+* Statistics -- lwIP's stats module
+* `TCP_NODELAY`, `SO_REUSE`
 
 ---
 
@@ -163,7 +174,6 @@ nc -l 3333
     - fuzzing
 * on target -- `IT_*`
 * debug prints
-* Demo: debugging on host
 
 ---
 
@@ -171,20 +181,23 @@ nc -l 3333
 
 * Cleanup patches
 * Converge to upstream
+* Support for vanilla lwip
 * Focus on host tests
-* Evaluate, measure, test
 
 ---
 
 # Takeaways
 
 * DNS servers (configured globally, reset servers on DHCP lease)
-* No deinit, some memory never deallocated
-* timeouts (connect, tv)
-* delete thread blocked on `select()`
+   - mDNS implemented as one-shot querier
+* No deinit, some memory is never deallocated
+* Timeouts (connect, tv)
+* Delete thread blocked on `select()`
+* Not everything is implemented (`getnameinfo()`, UDP's `recvfrom()`: get IPv6 destination address)
 
 ---
 
+---
 # Blocking sockets
 
 * Connect
@@ -252,7 +265,7 @@ Checking these conditions:
 
 ---
 
-notes:
+detailed static RAM and ROM :
  ```
             Archive File DRAM .data .rtc.data DRAM .bss IRAM0 .text & 0.vectors ram_st_total Flash .text & .rodata & .rodata_noload & .appdesc flash_total
 
@@ -318,7 +331,11 @@ esp_flash_spi_init.c.obj         72         0         4           0           0 
     bootloader_mem.c.obj          0         0         0           0           0            0          13         0                0          0          13
         ethernetif.c.obj          0         0         0           0           0            0           0         0                0          0           0
           eap_peap.c.obj          0         0         0           0           0            0           0         0                0          0           0
+```
+---
 
+Dual stack vs. IPv4 only:
+```
                liblwip.a         12         0      3792           0           0         3804       94939     15227                0          0      110178
                liblwip.a          4         0      2191           0           0         2195       63340     14019                0          0       77363
 ```

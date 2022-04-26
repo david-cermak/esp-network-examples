@@ -5,4 +5,6 @@ wget --no-verbose ${WGET_PATH}/${CONTRIB}.zip
 unzip -oq ${CONTRIB}.zip
 rm ${CONTRIB}.zip
 patch -s -p0 < lwip/test/${CONTRIB}.patch
+patch -s -p0 < contrib.patch
+
 cp ${CONTRIB}/examples/example_app/lwipcfg.h.example ${CONTRIB}/examples/example_app/lwipcfg.h

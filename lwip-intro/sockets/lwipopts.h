@@ -111,16 +111,10 @@
 
 #define LWIP_DBG_TYPES_ON         (LWIP_DBG_ON|LWIP_DBG_TRACE|LWIP_DBG_STATE|LWIP_DBG_FRESH|LWIP_DBG_HALT)
 
-typedef struct sys_sem * sys_sem_t;
-sys_sem_t* sys_arch_netconn_sem_get(void);
-void sys_arch_netconn_sem_alloc(void);
-void sys_arch_netconn_sem_free(void);
-#define LWIP_NETCONN_THREAD_SEM_GET()   sys_arch_netconn_sem_get()
-#define LWIP_NETCONN_THREAD_SEM_ALLOC() sys_arch_netconn_sem_alloc()
-#define LWIP_NETCONN_THREAD_SEM_FREE()  sys_arch_netconn_sem_free()
 
 /* ---------- Memory options ---------- */
 #define MEM_LIBC_MALLOC                 1
+#define MEMP_MEM_MALLOC 1
 
 /* MEM_ALIGNMENT: should be set to the alignment of the CPU for which
    lwIP is compiled. 4 byte alignment -> define MEM_ALIGNMENT to 4, 2
@@ -136,7 +130,7 @@ a lot of data that needs to be copied, this should be set high. */
 /* MEMP_NUM_PBUF: the number of memp struct pbufs. If the application
    sends a lot of data out of ROM (or other static memory), this
    should be set high. */
-#define MEMP_NUM_PBUF           16
+#define MEMP_NUM_PBUF           160
 /* MEMP_NUM_RAW_PCB: the number of UDP protocol control blocks. One
    per active RAW "connection". */
 #define MEMP_NUM_RAW_PCB        3
@@ -145,16 +139,16 @@ a lot of data that needs to be copied, this should be set high. */
 #define MEMP_NUM_UDP_PCB        4
 /* MEMP_NUM_TCP_PCB: the number of simulatenously active TCP
    connections. */
-#define MEMP_NUM_TCP_PCB        1000
+#define MEMP_NUM_TCP_PCB        20
 /* MEMP_NUM_TCP_PCB_LISTEN: the number of listening TCP
    connections. */
-#define MEMP_NUM_TCP_PCB_LISTEN 8
+#define MEMP_NUM_TCP_PCB_LISTEN 20
 /* MEMP_NUM_TCP_SEG: the number of simultaneously queued TCP
    segments. */
-#define MEMP_NUM_TCP_SEG        16
+#define MEMP_NUM_TCP_SEG        160
 /* MEMP_NUM_SYS_TIMEOUT: the number of simulateously active
    timeouts. */
-#define MEMP_NUM_SYS_TIMEOUT    17
+#define MEMP_NUM_SYS_TIMEOUT    170
 
 /* The following four are used only with the sequential API and can be
    set to 0 if the application only will use the raw API. */
@@ -163,12 +157,20 @@ a lot of data that needs to be copied, this should be set high. */
 #define LWIP_NETCONN_FULLDUPLEX         1
 #define LWIP_NETCONN_SEM_PER_THREAD     1
 /* MEMP_NUM_NETCONN: the number of struct netconns. */
-#define MEMP_NUM_NETCONN        1000
+#define MEMP_NUM_NETCONN        20
 /* MEMP_NUM_TCPIP_MSG_*: the number of struct tcpip_msg, which is used
    for sequential API communication and incoming packets. Used in
    src/api/tcpip.c. */
-#define MEMP_NUM_TCPIP_MSG_API   16
-#define MEMP_NUM_TCPIP_MSG_INPKT 16
+#define MEMP_NUM_TCPIP_MSG_API   160
+#define MEMP_NUM_TCPIP_MSG_INPKT 160
+
+#define TCPIP_MBOX_SIZE                 32
+
+#define DEFAULT_UDP_RECVMBOX_SIZE       6
+
+#define DEFAULT_TCP_RECVMBOX_SIZE       6
+
+#define DEFAULT_ACCEPTMBOX_SIZE         6
 
 
 /* ---------- Pbuf options ---------- */
