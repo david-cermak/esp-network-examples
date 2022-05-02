@@ -94,7 +94,6 @@ nc -l 3333
 
 ![width:30cm height:15cm](static_mem.png)
 
-
 ---
 
 * Configurable
@@ -107,7 +106,7 @@ nc -l 3333
   - TCPIP thread stack size (`LWIP_TCPIP_TASK_STACK_SIZE`)
   
 ---
-# How light-weight lwIP is?
+**Dynamic memory breakout**: Non-blocking TCP server that serves 10 connections. Clients connect and exchange data while keeping connection open. Connections get closed after the last one finishes.
 
 
 ![width:30cm height:15cm](mem_consumption.png)
@@ -128,7 +127,6 @@ nc -l 3333
 - netif (ethernet, wifi, thread)
 - Apps
     - ping, sntp, dhcp-server
-- (esp-netif)
 
 ---
 
@@ -136,7 +134,7 @@ nc -l 3333
 
 * Adjust various parameters
 * api-msg (close from another thread)
-* kill `tcp_pcb` in wait state(s)
+* kill `tcp_pcb` in fin-wait state
 * bugfixes
 * sys-timers on demand (IGMP, MLD6)
 * NAPT
@@ -186,16 +184,35 @@ nc -l 3333
 
 ---
 
-# Takeaways
+# Takeaway points
+
+* Do not use lwip API (other than socket API) directly. It might not be thread safe.
+* Check the [IDF's lwip docs](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/lwip.html) on differences
+   - with standard (e.g. linux) TCPIP stack 
+   - with upstream lwip
+* Check the [IDF's lwip docs](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/lwip.html#performance-optimization) about **Performance optimization** (Throughput vs. Memory usage)
+
+---
+
+# Takeaways 2
 
 * DNS servers (configured globally, reset servers on DHCP lease)
    - mDNS implemented as one-shot querier
 * No deinit, some memory is never deallocated
-* Timeouts (connect, tv)
-* Delete thread blocked on `select()`
-* Not everything is implemented (`getnameinfo()`, UDP's `recvfrom()`: get IPv6 destination address)
+* Timeouts
+    - `struct timeval` could set timeouts in `us`, but LWIP rounds it up to `ms`
+    - Cannot config connection timeout for blocking sockets
+* Do not support deleting task that is currently calling (blocked on) `select()`
+* Not everything is implemented (`getnameinfo()`, UDP's `recvmsg()`: get IPv6 destination address)
 
 ---
+
+# Additional notes and details
+
+* Sockets and timeouts
+* Sockets and multithread behavior
+* System timers and debugging
+* Detailed static RAM usage, dual stack vs. IPv4 only
 
 ---
 # Blocking sockets
@@ -262,6 +279,99 @@ Checking these conditions:
   - `struct timeval *tv = NULL;` -> blocks indefinitely
   - `struct timeval *tv = { 0, 0 };` -> returns immediately
 
+
+---
+
+# lwIP timers
+
+* System timers
+  - [lwip_cyclic_timers[]](https://github.com/espressif/esp-lwip/blob/76303df2386902e0d7873be4217f1d9d1b50f982/src/core/timeouts.c#L81-L126)
+  - Use `LWIP_ARRAYSIZE(lwip_cyclic_timers)` to get the number of all stack-internal cyclic timers
+
+* User timers
+  - NAPT timer
+  - DHCP server timer
+
+* Debug timers
+
+```cpp
+#define LWIP_DEBUG_TIMERNAMES      1
+#define SYS_DEBUG                  LWIP_DBG_OFF
+#define TIMERS_DEBUG               LWIP_DBG_ON
+```
+
+---
+### lwIP timers -- default config, most common timers
+
+* lwip_cyclic_timer (calls cyclic->handler() and reschedules itself.)
+* tcpip_tcp_timer
+* dhcp_fine_tmr
+* ip_reass_tmr
+* etharp_tmr
+* dns_tmr
+* nd6_tmr
+* ip6_reass_tmr
+
+---
+
+### lwIP timers -- example of debug log
+
+```
+tcpip: etharp_tmr()
+sys_timeout: 0x559642f68358 abs_time=5838063 handler=etharp_tmr arg=0x559641c4bad0
+sct calling h=dns_tmr t=0 arg=0x559641c4bb18
+tcpip: dns_tmr()
+sys_timeout: 0x559642f68418 abs_time=5838063 handler=dns_tmr arg=0x559641c4bb18
+sct calling h=nd6_tmr t=0 arg=0x559641c4bb30
+tcpip: nd6_tmr()
+sys_timeout: 0x559642f68458 abs_time=5838063 handler=nd6_tmr arg=0x559641c4bb30
+sct calling h=ip6_reass_tmr t=0 arg=0x559641c4bb48
+tcpip: ip6_reass_tmr()
+sys_timeout: 0x559642f68498 abs_time=5838063 handler=ip6_reass_tmr arg=0x559641c4bb48
+sct calling h=dhcp_fine_tmr t=0 arg=0x559641c4bb00
+tcpip: dhcp_fine_tmr()
+sys_timeout: 0x559642f683d8 abs_time=5837563 handler=dhcp_fine_tmr arg=0x559641c4bb00
+sct calling h=tcpip_tcp_timer t=0 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5837327 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=tcpip_tcp_timer t=1 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5837578 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=dhcp_fine_tmr t=0 arg=0x559641c4bb00
+tcpip: dhcp_fine_tmr()
+sys_timeout: 0x559642f683d8 abs_time=5838063 handler=dhcp_fine_tmr arg=0x559641c4bb00
+sct calling h=tcpip_tcp_timer t=0 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5837828 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=tcpip_tcp_timer t=0 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5838078 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=ip_reass_tmr t=0 arg=0x559641c4bab8
+tcpip: ip_reass_tmr()
+sys_timeout: 0x559642f68318 abs_time=5839063 handler=ip_reass_tmr arg=0x559641c4bab8
+sct calling h=etharp_tmr t=1 arg=0x559641c4bad0
+tcpip: etharp_tmr()
+sys_timeout: 0x559642f68358 abs_time=5839063 handler=etharp_tmr arg=0x559641c4bad0
+sct calling h=dns_tmr t=1 arg=0x559641c4bb18
+tcpip: dns_tmr()
+sys_timeout: 0x559642f68418 abs_time=5839063 handler=dns_tmr arg=0x559641c4bb18
+sct calling h=nd6_tmr t=1 arg=0x559641c4bb30
+tcpip: nd6_tmr()
+sys_timeout: 0x559642f68458 abs_time=5839063 handler=nd6_tmr arg=0x559641c4bb30
+sct calling h=ip6_reass_tmr t=1 arg=0x559641c4bb48
+tcpip: ip6_reass_tmr()
+sys_timeout: 0x559642f68498 abs_time=5839063 handler=ip6_reass_tmr arg=0x559641c4bb48
+sct calling h=dhcp_fine_tmr t=1 arg=0x559641c4bb00
+tcpip: dhcp_fine_tmr()
+sys_timeout: 0x559642f683d8 abs_time=5838563 handler=dhcp_fine_tmr arg=0x559641c4bb00
+sct calling h=tcpip_tcp_timer t=0 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5838328 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=tcpip_tcp_timer t=0 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5838578 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=dhcp_fine_tmr t=0 arg=0x559641c4bb00
+tcpip: dhcp_fine_tmr()
+sys_timeout: 0x559642f683d8 abs_time=5839063 handler=dhcp_fine_tmr arg=0x559641c4bb00
+sct calling h=tcpip_tcp_timer t=0 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5838828 handler=tcpip_tcp_timer arg=(nil)
+sct calling h=tcpip_tcp_timer t=1 arg=(nil)
+sys_timeout: 0x7f1f58000f38 abs_time=5839079 handler=tcpip_tcp_timer arg=(nil)
+```
 
 ---
 
