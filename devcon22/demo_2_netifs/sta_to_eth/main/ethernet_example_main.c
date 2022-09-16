@@ -8,19 +8,31 @@
 */
 #include <stdio.h>
 #include <string.h>
+#include <dhcpserver/dhcpserver.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
 #include "esp_netif.h"
 #include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "sdkconfig.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+#include "lwip/lwip_napt.h"
+
 #if CONFIG_ETH_USE_SPI_ETHERNET
 #include "driver/spi_master.h"
 #endif // CONFIG_ETH_USE_SPI_ETHERNET
 
 static const char *TAG = "eth_example";
+static EventGroupHandle_t s_wifi_event_group;
+static esp_netif_t* sta2;
+#define EXAMPLE_ESP_WIFI_SSID      "myssid"
+#define EXAMPLE_ESP_WIFI_PASS      "mypassword"
+#define WIFI_CONNECTED_BIT BIT0
 
 #if CONFIG_EXAMPLE_USE_SPI_ETHERNET
 #define INIT_SPI_ETH_MODULE_CONFIG(eth_module_config, num)                                      \
@@ -68,6 +80,18 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
+static esp_err_t set_dhcps_dns(esp_netif_t *netif, uint32_t addr)
+{
+    esp_netif_dns_info_t dns;
+    dns.ip.u_addr.ip4.addr = addr;
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    dhcps_offer_t dhcps_dns_value = OFFER_DNS;
+    ESP_ERROR_CHECK(esp_netif_dhcps_option(netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &dhcps_dns_value, sizeof(dhcps_dns_value)));
+    ESP_ERROR_CHECK(esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns));
+    return ESP_OK;
+}
+
+
 /** Event handler for IP_EVENT_ETH_GOT_IP */
 static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
                                  int32_t event_id, void *event_data)
@@ -81,6 +105,91 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info->netmask));
     ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
     ESP_LOGI(TAG, "~~~~~~~~~~~");
+}
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                          int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+        ESP_LOGI(TAG, "WIFI_EVENT_STA_CONNECTED");
+//        esp_netif_action_start(sta2, 0, 0, 0);
+        esp_netif_action_connected(sta2, 0, 0, 0);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        esp_wifi_connect();
+        ESP_LOGI(TAG, "retry to connect to the AP");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_AP_STAIPASSIGNED) {
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        ESP_LOGI(TAG, "WIFI_CONNECTED_BIT");
+    }
+}
+
+void wifi_init_sta(esp_netif_t* eth)
+{
+    s_wifi_event_group = xEventGroupCreate();
+
+//    esp_netif_create_default_wifi_sta();
+    esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_AP();
+    esp_netif_ip_info_t ranges = {
+            .ip = { .addr = ESP_IP4TOADDR( 192, 168, 3, 1) },
+            .gw = { .addr = ESP_IP4TOADDR( 192, 168, 3, 1) },
+            .netmask = { .addr = ESP_IP4TOADDR( 255, 255, 255, 0) },
+    };
+    esp_netif_config.ip_info = &ranges;
+    esp_netif_config.if_desc = "wifi station point with dhcp server";
+    esp_netif_config.if_key = "STA_2";
+    esp_netif_config.route_prio = 10;
+    sta2 = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
+    ESP_LOGI(TAG, "Created AP network interface: %p", sta2);
+    esp_wifi_set_default_wifi_sta_handlers();
+    esp_netif_dns_info_t dns;
+    ESP_ERROR_CHECK(esp_netif_get_dns_info(eth, ESP_NETIF_DNS_MAIN, &dns));
+    set_dhcps_dns(sta2, dns.ip.u_addr.ip4.addr);
+
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_got_ip));
+
+    wifi_config_t wifi_config = {
+            .sta = {
+                    .ssid = EXAMPLE_ESP_WIFI_SSID,
+                    .password = EXAMPLE_ESP_WIFI_PASS,
+            },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+
+    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
+     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                                           WIFI_CONNECTED_BIT,
+                                           pdFALSE,
+                                           pdFALSE,
+                                           portMAX_DELAY);
+
+    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
+     * happened. */
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGW(TAG, "connected to ap SSID:%s password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    }
+
+    ESP_LOGI(TAG, "joined and assigned IP -> Setting up the NAT");
+    ip_napt_enable(ranges.ip.addr, 1);
 }
 
 void app_main(void)
@@ -278,4 +387,18 @@ void app_main(void)
         ESP_ERROR_CHECK(esp_eth_start(eth_handle_spi[i]));
     }
 #endif // CONFIG_EXAMPLE_USE_SPI_ETHERNET
+
+    //Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    wifi_init_sta(eth_netif);
+
+
 }

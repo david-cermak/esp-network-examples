@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_event.h"
@@ -25,29 +27,12 @@
 
 static const char *TAG = "MQTTS_EXAMPLE";
 
+static EventGroupHandle_t event_group = NULL;
+static const int CONNECT_BIT = BIT0;
 
-#if CONFIG_BROKER_CERTIFICATE_OVERRIDDEN == 1
-static const uint8_t mqtt_eclipseprojects_io_pem_start[]  = "-----BEGIN CERTIFICATE-----\n" CONFIG_BROKER_CERTIFICATE_OVERRIDE "\n-----END CERTIFICATE-----";
-#else
+
 extern const uint8_t mqtt_eclipseprojects_io_pem_start[]   asm("_binary_mqtt_eclipseprojects_io_pem_start");
-#endif
 extern const uint8_t mqtt_eclipseprojects_io_pem_end[]   asm("_binary_mqtt_eclipseprojects_io_pem_end");
-
-//
-// Note: this function is for testing purposes only publishing part of the active partition
-//       (to be checked against the original binary)
-//
-static void send_binary(esp_mqtt_client_handle_t client)
-{
-    spi_flash_mmap_handle_t out_handle;
-    const void *binary_address;
-    const esp_partition_t *partition = esp_ota_get_running_partition();
-    esp_partition_mmap(partition, 0, partition->size, SPI_FLASH_MMAP_DATA, &binary_address, &out_handle);
-    // sending only the configured portion of the partition (if it's less than the partition size)
-    int binary_size = MIN(CONFIG_BROKER_BIN_SIZE_TO_SEND,partition->size);
-    int msg_id = esp_mqtt_client_publish(client, "/topic/binary", binary_address, binary_size, 0, 0);
-    ESP_LOGI(TAG, "binary sent with msg_id=%d", msg_id);
-}
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -68,14 +53,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        msg_id = esp_mqtt_client_subscribe(client, "/topic/qos0", 0);
-        ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+        xEventGroupSetBits(event_group, CONNECT_BIT);
 
-        msg_id = esp_mqtt_client_subscribe(client, "/topic/qos1", 1);
+        msg_id = esp_mqtt_client_subscribe(client, "/mqtt-demonstration/qos1", 1);
         ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
-
-        msg_id = esp_mqtt_client_unsubscribe(client, "/topic/qos1");
-        ESP_LOGI(TAG, "sent unsubscribe successful, msg_id=%d", msg_id);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -83,8 +64,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-        msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
-        ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
         break;
     case MQTT_EVENT_UNSUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
@@ -96,10 +75,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
-        if (strncmp(event->data, "send binary please", event->data_len) == 0) {
-            ESP_LOGI(TAG, "Sending the binary");
-            send_binary(client);
-        }
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -120,10 +95,55 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
-static void mqtt_app_start(void)
+static void on_ip_event(void *arg, esp_event_base_t event_base,
+                        int32_t event_id, void *event_data)
+{
+    ESP_LOGI(TAG, "IP event! %d", event_id);
+    if (event_id == IP_EVENT_ETH_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(TAG, "got IP event!!!");
+
+        ESP_LOGI(TAG, "IP          : " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Netmask     : " IPSTR, IP2STR(&event->ip_info.netmask));
+        ESP_LOGI(TAG, "Gateway     : " IPSTR, IP2STR(&event->ip_info.gw));
+
+    } else if (event_id == IP_EVENT_ETH_LOST_IP) {
+        ESP_LOGE(TAG, "lost IP event!!!");
+    }
+}
+
+static void eth_event_handler(void *arg, esp_event_base_t event_base,
+                              int32_t event_id, void *event_data)
+{
+    uint8_t mac_addr[6] = {0};
+    /* we can get the ethernet driver handle from event data */
+    esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
+
+    switch (event_id) {
+        case ETHERNET_EVENT_CONNECTED:
+            esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+            ESP_LOGI(TAG, "Ethernet Link Up");
+            ESP_LOGI(TAG, "Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
+                     mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+            break;
+        case ETHERNET_EVENT_DISCONNECTED:
+            ESP_LOGE(TAG, "Ethernet Link Down");
+            break;
+        case ETHERNET_EVENT_START:
+            ESP_LOGI(TAG, "Ethernet Started");
+            break;
+        case ETHERNET_EVENT_STOP:
+            ESP_LOGI(TAG, "Ethernet Stopped");
+            break;
+        default:
+            break;
+    }
+}
+
+static esp_mqtt_client_handle_t mqtt_app_start(void)
 {
     const esp_mqtt_client_config_t mqtt_cfg = {
-        .uri = CONFIG_BROKER_URI,
+        .uri = "mqtts://mqtt.eclipseprojects.io:8883",
         .cert_pem = (const char *)mqtt_eclipseprojects_io_pem_start,
     };
 
@@ -132,6 +152,7 @@ static void mqtt_app_start(void)
     /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
+    return client;
 }
 
 void app_main(void)
@@ -151,6 +172,9 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    event_group = xEventGroupCreate();
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP | IP_EVENT_ETH_LOST_IP, &on_ip_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
 
     /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
      * Read "Establishing Wi-Fi or Ethernet Connection" section in
@@ -158,5 +182,14 @@ void app_main(void)
      */
     ESP_ERROR_CHECK(example_connect());
 
-    mqtt_app_start();
+    esp_mqtt_client_handle_t client = mqtt_app_start();
+
+    xEventGroupWaitBits(event_group, CONNECT_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
+    while (1)
+    {
+        int msg_id = esp_mqtt_client_publish(client, "/mqtt-demonstration/qos1", "data", 0, 1, 0);
+        ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
 }

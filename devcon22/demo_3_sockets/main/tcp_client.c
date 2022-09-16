@@ -21,10 +21,14 @@
 #include "addr_from_stdin.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
+#include "esp_vfs.h"
+#include "esp_vfs_dev.h"
+#include "esp_vfs_eventfd.h"
 
 
 #if defined(CONFIG_EXAMPLE_IPV4)
-#define HOST_IP_ADDR "192.168.1.108"
+//#define HOST_IP_ADDR "192.168.1.108"
+#define HOST_IP_ADDR "1.2.3.4"
 #elif defined(CONFIG_EXAMPLE_IPV6)
 #define HOST_IP_ADDR CONFIG_EXAMPLE_IPV6_ADDR
 #else
@@ -35,6 +39,38 @@
 
 static const char *TAG = "example";
 static const char *payload = "Message from ESP32 ";
+static int disconnect_fd;
+
+static void eth_event_handler(void *arg, esp_event_base_t event_base,
+                              int32_t event_id, void *event_data)
+{
+    uint8_t mac_addr[6] = {0};
+    /* we can get the ethernet driver handle from event data */
+    esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
+
+    switch (event_id) {
+        case ETHERNET_EVENT_CONNECTED:
+            esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+            ESP_LOGI(TAG, "Ethernet Link Up");
+            ESP_LOGI(TAG, "Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
+                     mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+            break;
+        case ETHERNET_EVENT_DISCONNECTED:
+            ESP_LOGE(TAG, "Ethernet Link Down");
+            uint64_t signal = 1;
+            ssize_t val = write(disconnect_fd, &signal, sizeof(signal));
+            assert(val == sizeof(signal));
+            break;
+        case ETHERNET_EVENT_START:
+            ESP_LOGI(TAG, "Ethernet Started");
+            break;
+        case ETHERNET_EVENT_STOP:
+            ESP_LOGI(TAG, "Ethernet Stopped");
+            break;
+        default:
+            break;
+    }
+}
 
 static void tcp_client_task(void *pvParameters)
 {
@@ -69,11 +105,63 @@ static void tcp_client_task(void *pvParameters)
             break;
         }
         ESP_LOGI(TAG, "Socket created, connecting to %s:%d", host_ip, PORT);
-
-        int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6));
-        if (err != 0) {
-            ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
+        int flags;
+        if ((flags = fcntl(sock, F_GETFL, NULL)) < 0) {
+            ESP_LOGE(TAG, "[sock=%d] get file flags error: %s", sock, strerror(errno));
             break;
+        }
+
+        flags |= O_NONBLOCK;
+        if (fcntl(sock, F_SETFL, flags) < 0) {
+            ESP_LOGE(TAG, "[sock=%d] set blocking/nonblocking error: %s", sock, strerror(errno));
+            break;
+        }
+        ESP_LOGD(TAG, "[sock=%d] Connecting to server", sock);
+        if (connect(sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6)) < 0) {
+            if (errno == EINPROGRESS) {
+                fd_set fdset;
+                struct timeval tv = { .tv_usec = 0, .tv_sec = 10 }; // Default connection timeout is 10 s
+
+                FD_ZERO(&fdset);
+                FD_SET(sock, &fdset);
+                fd_set readfds;
+                FD_ZERO(&readfds);
+                FD_SET(disconnect_fd, &readfds);
+
+                int maxFd = disconnect_fd > sock ? disconnect_fd : sock;
+
+                int res = select(maxFd+1, &readfds, &fdset, NULL, &tv);
+                printf("[sock=%d] select() returned %d\n", sock, res);
+                if (res < 0) {
+                    ESP_LOGE(TAG, "[sock=%d] select() error: %s", sock, strerror(errno));
+                    break;
+                }
+                else if (res == 0) {
+                    ESP_LOGE(TAG, "[sock=%d] select() timeout", sock);
+                    break;
+                } else {
+                    if (FD_ISSET(disconnect_fd, &readfds)) {
+                        ESP_LOGE(TAG, "[sock=%d] Disconnected! exiting...", sock);
+                        lwip_close(sock);
+                        ESP_LOGI(TAG, "After close");
+                        continue;
+                    }
+                    int sockerr;
+                    socklen_t len = (socklen_t)sizeof(int);
+
+                    if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (void*)(&sockerr), &len) < 0) {
+                        ESP_LOGE(TAG, "[sock=%d] getsockopt() error: %s", sock, strerror(errno));
+                        break;
+                    }
+                    else if (sockerr) {
+                        ESP_LOGE(TAG, "[sock=%d] delayed connect error: %s", sock, strerror(sockerr));
+                        break;
+                    }
+                }
+            } else {
+                ESP_LOGE(TAG, "[sock=%d] connect() error: %s", sock, strerror(errno));
+                break;
+            }
         }
         ESP_LOGI(TAG, "Successfully connected");
         struct linger so_linger;
@@ -84,7 +172,7 @@ static void tcp_client_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(100));
 //        usleep(500000);
         ESP_LOGE(TAG, "Sending...");
-        err = send(sock, payload, 9, 0);
+        int err = send(sock, payload, 9, 0);
         if (err < 0) {
             ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
             break;
@@ -154,7 +242,13 @@ void app_main(void)
      * Read "Establishing Wi-Fi or Ethernet Connection" section in
      * examples/protocols/README.md for more information about this function.
      */
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
     ESP_ERROR_CHECK(example_connect());
+    esp_vfs_eventfd_config_t config = ESP_VFS_EVENTD_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_vfs_eventfd_register(&config));
+
+    disconnect_fd = eventfd(0, EFD_SUPPORT_ISR);
+    assert(disconnect_fd > 0);
 
     xTaskCreate(tcp_client_task, "tcp_client", 4096, NULL, 5, NULL);
 }
