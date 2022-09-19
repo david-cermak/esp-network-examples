@@ -1,3 +1,6 @@
 [submodule "lwip-intro/lwip"]
 	path = lwip-intro/lwip
 	url = git@github.com:david-cermak/esp-lwip.git
+[submodule "backnet-sever/components/bacnet/bacnet-stack"]
+	path = backnet-sever/components/bacnet/bacnet-stack
+	url = https://github.com/bacnet-stack/bacnet-stack.git
