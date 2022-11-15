@@ -2,6 +2,7 @@
 // Copyleft  F.Chaxel 2017
 //
 
+#include "network_init.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 
@@ -25,7 +26,7 @@ bool bip_init(char *ifname)
 
     int value = 1;
 
-    esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip_info);
+    esp_netif_get_ip_info(get_netif(), &ip_info);
 
     bip_set_interface(ifname);
     bip_set_port(0xBAC0U);

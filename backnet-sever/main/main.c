@@ -18,9 +18,8 @@
 #include "ai.h"
 #include "bo.h"
 #include "esp_log.h"
-#include "esp_wifi.h"
 #include "esp_event.h"
-#include "nvs_flash.h"
+#include "network_init.h"
 
 #include "driver/gpio.h"
 #include "esp_rom_gpio.h"
@@ -38,10 +37,7 @@ extern uint32_t hall_sens_read();
 
 // GPIO 5 has a Led on Sparkfun ESP32 board
 #define BACNET_LED 5
-#define TAG "bacnet-sta"
-
-#define EXAMPLE_ESP_WIFI_SSID      "CONFIG_ESP_WIFI_SSID"
-#define EXAMPLE_ESP_WIFI_PASS      "CONFIG_ESP_WIFI_PASSWORD"
+#define TAG "bacnet-demo"
 
 uint8_t Handler_Transmit_Buffer[MAX_PDU] = { 0 };
 
@@ -54,8 +50,6 @@ uint8_t Rx_Buf[MAX_MPDU + 16 /* Add a little safety margin to the buffer,
                               * decoding functions will just end up in
                               * a safe field of static zeros. */] = { 0 };
 
-EventGroupHandle_t s_wifi_event_group;
-const static int CONNECTED_BIT = BIT0;
 
 /* BACnet handler, stack init, IAm */
 void StartBACnet()
@@ -83,84 +77,9 @@ void StartBACnet()
     Send_I_Am(&Handler_Transmit_Buffer[0]);
 }
 
-/* wifi events handler : start & stop bacnet with an event  */
-static void event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
-{
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "retry to connect to the AP");
-        esp_wifi_connect();
-        xEventGroupClearBits(s_wifi_event_group, CONNECTED_BIT);
-        bip_cleanup();
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        if (xEventGroupGetBits(s_wifi_event_group) != CONNECTED_BIT) {
-            xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
-            StartBACnet();
-        }
-    }
-}
 
-/* tcpip & wifi station start */
-void wifi_init_station(void)
-{
-    //Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
 
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
 
-    s_wifi_event_group = xEventGroupCreate();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_got_ip));
-
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .password = EXAMPLE_ESP_WIFI_PASS,
-            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
-        },
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
-
-    ESP_LOGI(TAG, "wifi_init_sta finished.");
-
-    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
-     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
-    xEventGroupWaitBits(s_wifi_event_group,
-            CONNECTED_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
-}
 
 /* setup gpio & nv flash, call wifi init code */
 void setup()
@@ -170,12 +89,7 @@ void setup()
 
     gpio_set_level(BACNET_LED, 0);
 
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES) {
-        nvs_flash_erase();
-        ret = nvs_flash_init();
-    }
-    wifi_init_station();
+    network_init();
 }
 
 /* Bacnet Task */
@@ -197,9 +111,9 @@ void BACnetTask(void *pvParameters)
         vTaskDelay(
             10 / portTICK_PERIOD_MS); // could be remove to speed the code
 
-        // do nothing if not connected to wifi
+        // do nothing if not connected to network
         xEventGroupWaitBits(
-            s_wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+                s_net_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
         {
             uint32_t newtick = xTaskGetTickCount();
 
