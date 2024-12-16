@@ -1,8 +1,6 @@
 #pragma once
 
 #include "sys/socket.h"
-#include "socketpair.h"
-#define PF_LOCAL AF_UNIX
 
 // this ice: using lwip's alloc/free hooks
 #define mem_free plctag_mem_free
