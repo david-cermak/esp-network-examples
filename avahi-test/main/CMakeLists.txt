@@ -27,7 +27,7 @@ set(avahi_core_SRCS "${avahi_core}/server.c"
         "${avahi_core}/cache.c"
         "${avahi_core}/util.c"
         "${avahi_core}/addr-util.c"
-        "${avahi_core}/socket.c"
+#        "${avahi_core}/socket.c"
         "${avahi_core}/timeeventq.c"
         "${avahi_core}/querier.c"
         "${avahi_core}/browse.c"
@@ -49,6 +49,7 @@ set(avahi_core_SRCS "${avahi_core}/server.c"
 
 idf_component_register(SRCS "avahi-test.c"
                             "avahi-port/iface-esp32.c"
+                            "avahi-port/socket.c"
                             ${avahi_core_SRCS}
                     INCLUDE_DIRS "avahi-port" "${avahi_core}" "${avahi_path}" )
 

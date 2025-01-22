@@ -152,9 +152,9 @@ void app_main(void)
     config.publish_workstation = 0;
     config.publish_domain = 0;
 
-    avahi_address_parse("192.168.32.3", AVAHI_PROTO_UNSPEC, &config.wide_area_servers[0]);
-    config.n_wide_area_servers = 1;
-    config.enable_wide_area = 1;
+//    avahi_address_parse("192.168.32.3", AVAHI_PROTO_UNSPEC, &config.wide_area_servers[0]);
+    config.n_wide_area_servers = 0;
+    config.enable_wide_area = 0;
     config.use_ipv4 = 1;
     config.use_ipv6 = 0;
     server = avahi_server_new(poll_api, &config, NULL, NULL, NULL);
