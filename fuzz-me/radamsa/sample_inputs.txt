@@ -1,0 +1,8 @@
+mqtt/home/temperature {"device_id":"sensor01","temperature":23.5,"status":"active"}
+mqtt/device/led {"action":"toggle","brightness":80,"color":"red"}
+mqtt/sensors/humidity {"device_id":"esp32_01","humidity":65,"location":"kitchen"}
+GET /api/sensors {"action":"read","sensor":"temperature"}
+POST /device/control {"action":"set","value":"on","device":"fan"}
+GET /status {"device_id":"thermostat","action":"get_state"}
+POST /api/data {"temperature":22.5,"humidity":60,"timestamp":1234567890}
+mqtt/alarm/motion {"sensor":"pir_01","status":"detected","room":"living_room"}

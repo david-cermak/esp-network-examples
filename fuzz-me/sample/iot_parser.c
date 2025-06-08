@@ -20,6 +20,13 @@ typedef struct {
     char body[MAX_BUFFER_SIZE];
 } http_message_t;
 
+// Function prototypes
+void parse_mqtt_topic(const char* input, mqtt_message_t* msg);
+int extract_json_value(const char* json, const char* key, char* value);
+void parse_http_request(const char* input, http_message_t* msg);
+void print_mqtt_analysis(const mqtt_message_t* msg);
+void print_http_analysis(const http_message_t* msg);
+
 // Subtle bug #1: No bounds checking on strcpy
 void parse_mqtt_topic(const char* input, mqtt_message_t* msg) {
     const char* space_pos = strchr(input + 4, ' '); // Skip "mqtt"
@@ -117,11 +124,11 @@ void print_http_analysis(const http_message_t* msg) {
     printf("Path: %s\n", msg->path);
     printf("Body: %s\n", msg->body);
     
-    // Subtle bug #4: Format string vulnerability
+    // Subtle bug #4: Format string vulnerability (INTENTIONAL - for fuzzing demo)
     char error_msg[100];
     if (strlen(msg->method) == 0) {
         sprintf(error_msg, "Warning: Empty method in request: %s", msg->path);
-        printf(error_msg); // Should use printf("%s", error_msg)
+        printf(error_msg); // INTENTIONAL BUG: Should use printf("%s", error_msg)
     }
     
     // Extract JSON from body
@@ -137,7 +144,7 @@ void print_http_analysis(const http_message_t* msg) {
     printf("\n");
 }
 
-int main() {
+int main(void) {
     char input[MAX_BUFFER_SIZE * 2];
     
     printf("IoT Network Message Parser\n");
