@@ -144,6 +144,9 @@ void print_http_analysis(const http_message_t* msg) {
     printf("\n");
 }
 
+// Interactive main function - disabled when building for fuzz testing
+// Define FUZZTEST_BUILD or FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION to disable
+#if !defined(FUZZTEST_BUILD) && !defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
 int main(void) {
     char input[MAX_BUFFER_SIZE * 2];
     
@@ -179,4 +182,5 @@ int main(void) {
     }
     
     return 0;
-} 
+}
+#endif // !FUZZTEST_BUILD && !FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION 

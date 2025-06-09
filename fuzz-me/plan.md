@@ -44,7 +44,7 @@
         - Mutation diversity effective for finding input validation issues
     - **Location**: `radamsa/` directory with complete documentation and examples
 
-[ ] use boofuzz for protocol-aware fuzzing
+[x] use boofuzz for protocol-aware fuzzing
     - **Tool**: boofuzz - network protocol fuzzer and protocol analysis toolkit
     - **Approach**: Protocol-aware stateful fuzzing with structured input generation
     - **Target**: IoT parser via network interface or stdin simulation
