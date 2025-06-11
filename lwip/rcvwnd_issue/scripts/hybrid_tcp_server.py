@@ -129,6 +129,10 @@ class HybridTcpServer:
                 self._send_fragmented_response(client_socket)
             else:
                 print(f"[ERROR] Unknown mode: {self.mode}")
+
+            # Wait for 10 seconds to let the client process the response
+            time.sleep(10)
+
                 
         except Exception as e:
             print(f"[CLIENT] Error handling {client_ip}:{client_port}: {e}")
@@ -156,7 +160,7 @@ class HybridTcpServer:
         client_socket.send(headers.encode())
         
         # Small delay to let client process headers
-        time.sleep(0.1)
+        # time.sleep(0.1)
         
         # Now we need to send data that exceeds the client's window
         # The key is to send MORE data than the client's receive window allows
