@@ -281,6 +281,52 @@ class ScapyTcpServer:
         send(ack_pkt, verbose=0, iface=self.iface)
         print(f"[DEBUG] ACK sent: {ack_pkt.summary()}")
 
+    def _wait_for_data_ack(self, expected_ack):
+        """Wait for ACK from client for data segment"""
+        print(f"[SERVER] Waiting for data ACK (expecting ACK={expected_ack}) from {self.client_ip}:{self.client_port}...")
+        
+        start_time = time.time()
+        print(f"[DEBUG] {start_time:.6f} Starting to look for data ACK packet")
+        
+        def is_data_ack(pkt):
+            return (
+                pkt.haslayer(TCP)
+                and pkt[IP].src == self.client_ip
+                and pkt[TCP].sport == self.client_port
+                and pkt[TCP].dport == self.sport
+                and pkt[TCP].flags & 0x10 == 0x10  # Has ACK flag
+                and pkt[TCP].ack == expected_ack  # ACKs our data
+            )
+        
+        # Check if we already have the ACK packet in our global buffer
+        with self.global_packets_lock:
+            for packet_info in reversed(self.global_packets):  # Check most recent first
+                pkt = packet_info['pkt']
+                if is_data_ack(pkt):
+                    print(f"[DEBUG] Found data ACK in global buffer from {packet_info['timestamp']:.6f}")
+                    print(f"[SERVER] Got data ACK (ACK={pkt[TCP].ack})")
+                    return True
+        
+        # If not found in buffer, wait for new packets
+        print(f"[DEBUG] Data ACK not in buffer, waiting for new packets...")
+        timeout = 10
+        while (time.time() - start_time) < timeout and self.running:
+            time.sleep(0.1)  # Check every 100ms
+            
+            with self.global_packets_lock:
+                for packet_info in reversed(self.global_packets):
+                    if packet_info['timestamp'] < start_time:
+                        continue  # Skip old packets
+                    
+                    pkt = packet_info['pkt']
+                    if is_data_ack(pkt):
+                        print(f"[DEBUG] Found data ACK in global buffer from {packet_info['timestamp']:.6f}")
+                        print(f"[SERVER] Got data ACK (ACK={pkt[TCP].ack})")
+                        return True
+        
+        print("[SERVER] Data ACK not received within timeout.")
+        return False
+
     def _send_http_response(self):
         ip = IP(dst=self.client_ip)
         headers = (
@@ -290,21 +336,47 @@ class ScapyTcpServer:
             "Connection: close\r\n"
             "\r\n"
         ).encode()
-        payload = headers + self.response_data
-        print(f"[SERVER] Sending HTTP response ({len(payload)} bytes: {len(headers)} headers + {len(self.response_data)} data) to {self.client_ip}:{self.client_port}")
+        full_payload = headers + self.response_data
+        print(f"[SERVER] Sending HTTP response in 3 segments ({len(full_payload)} bytes total: {len(headers)} headers + {len(self.response_data)} data) to {self.client_ip}:{self.client_port}")
         
-        # Check if we might cause fragmentation
-        estimated_ip_size = 20 + 20 + len(payload)  # IP + TCP + payload
-        if estimated_ip_size > MTU:
-            print(f"[WARNING] Estimated IP packet size ({estimated_ip_size}) may exceed MTU ({MTU}) and cause fragmentation!")
-        else:
-            print(f"[DEBUG] Estimated IP packet size ({estimated_ip_size}) should fit in single packet (MTU={MTU})")
+        # Split payload into 3 chunks: 500, 500, rest
+        chunk_sizes = [500, 500]
+        remaining = len(full_payload) - sum(chunk_sizes)
+        if remaining > 0:
+            chunk_sizes.append(remaining)
         
-        psh = ip/TCP(sport=self.sport, dport=self.client_port, seq=self.seq, ack=self.ack, flags='PA')/payload
-        send(psh, verbose=0, iface=self.iface)
-        print(f"[DEBUG] HTTP response sent: {psh.summary()}")
-        print(f"[DEBUG] Response SEQ={self.seq}, next SEQ={self.seq + len(payload)}, ACK={self.ack}")
-        self.seq += len(payload)
+        print(f"[DEBUG] Chunk sizes: {chunk_sizes}")
+        
+        current_pos = 0
+        for i, chunk_size in enumerate(chunk_sizes, 1):
+            if current_pos >= len(full_payload):
+                break
+                
+            # Get the chunk data
+            chunk_end = min(current_pos + chunk_size, len(full_payload))
+            chunk_data = full_payload[current_pos:chunk_end]
+            actual_chunk_size = len(chunk_data)
+            
+            print(f"[SERVER] Sending segment {i}/{len(chunk_sizes)} ({actual_chunk_size} bytes) SEQ={self.seq}")
+            
+            # Send the chunk
+            psh = ip/TCP(sport=self.sport, dport=self.client_port, seq=self.seq, ack=self.ack, flags='PA')/chunk_data
+            send(psh, verbose=0, iface=self.iface)
+            print(f"[DEBUG] Segment {i} sent: {psh.summary()}")
+            
+            # Update sequence number
+            next_seq = self.seq + actual_chunk_size
+            print(f"[DEBUG] Segment {i} SEQ={self.seq}, next SEQ={next_seq}, ACK={self.ack}")
+            
+            # Wait for ACK before sending next segment (except for the last one)
+            if i < len(chunk_sizes):
+                if not self._wait_for_data_ack(next_seq):
+                    print(f"[WARNING] Failed to receive ACK for segment {i}, continuing anyway...")
+            
+            self.seq = next_seq
+            current_pos = chunk_end
+        
+        print(f"[SERVER] All HTTP response segments sent. Final SEQ={self.seq}")
 
     def _wait_for_fin(self):
         print(f"[SERVER] Waiting for FIN from {self.client_ip}:{self.client_port}...")

@@ -36,6 +36,7 @@
 static const char *TAG = "example";
 static const char *payload = "GET /test HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n";
 static const int EXPECTED_RESPONSE_SIZE = 1500;  // Expect ~1380 bytes + headers
+static const int BATCH = 128;  // Receive data in 16-byte batches
 
 void tcp_client(void)
 {
@@ -92,7 +93,7 @@ void tcp_client(void)
         // Receive response - handle potentially large packets
         int total_received = 0;
         int receive_attempts = 0;
-        const int max_attempts = 10;
+        const int max_attempts = 100;
         
         while (total_received < EXPECTED_RESPONSE_SIZE && receive_attempts < max_attempts) {
             int remaining_buffer = sizeof(rx_buffer) - total_received - 1; // -1 for null terminator
@@ -101,7 +102,10 @@ void tcp_client(void)
                 break;
             }
             
-            int len = recv(sock, rx_buffer + total_received, remaining_buffer, 0);
+            // Receive only BATCH bytes at a time, or remaining_buffer if smaller
+            int bytes_to_receive = (remaining_buffer < BATCH) ? remaining_buffer : BATCH;
+            int len = recv(sock, rx_buffer + total_received, bytes_to_receive, 0);
+            vTaskDelay(300 / portTICK_PERIOD_MS);
             receive_attempts++;
             
             if (len < 0) {
