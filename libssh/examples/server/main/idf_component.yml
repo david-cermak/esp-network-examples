@@ -1,0 +1,5 @@
+dependencies:
+  espressif/libssh:
+    version: '*'
+    override_path: ../../..
+  espressif/sock_utils: ^0.2.2
