@@ -229,7 +229,7 @@
 #define WITH_SERVER 1
 
 /* Define to 1 if you want to enable DH group exchange algorithms */
-#define WITH_GEX 1
+/* #define WITH_GEX 1 */
 
 /* Define to 1 if you want to enable insecure none cipher and MAC */
 /* #undef WITH_INSECURE_NONE */
