@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Async Server Test Page</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .feature-list li {
+            background: rgba(255, 255, 255, 0.1);
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .test-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .test-button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .counter {
+            font-size: 2em;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Async Server Test Page</h1>
+        
+        <div class="status">
+            <strong>✅ Server Status:</strong> Connected to async server running on port 8080
+        </div>
+        
+        <div class="info">
+            <h3>About This Server</h3>
+            <p>This is a test page for a toy async server that demonstrates parallel processing capabilities. Each client connection is handled in a separate thread, and the HTML content is sent in chunks with simulated delays.</p>
+        </div>
+        
+        <div class="info">
+            <h3>Server Features</h3>
+            <ul class="feature-list">
+                <li>🔧 Multi-threaded client handling</li>
+                <li>📦 Chunked file transfer (100 bytes per chunk)</li>
+                <li>⏱️ Simulated processing delays (1 second per chunk)</li>
+                <li>🌐 HTTP/1.1 compliant responses</li>
+                <li>🔄 Parallel request processing</li>
+            </ul>
+        </div>
+        
+        <div class="counter">
+            <span id="counter">0</span>
+        </div>
+        
+        <div style="text-align: center;">
+            <button class="test-button" onclick="incrementCounter()">Increment Counter</button>
+            <button class="test-button" onclick="addLogEntry()">Add Log Entry</button>
+            <button class="test-button" onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div class="log" id="log">
+            <div>Page loaded at: <span id="loadTime"></span></div>
+            <div>Server: C server with pthread support</div>
+            <div>Port: 8080</div>
+        </div>
+        
+        <div class="info">
+            <h3>Testing Instructions</h3>
+            <p>Open multiple browser tabs/windows pointing to this server to test the parallel processing. Each connection will be handled in a separate thread, and you'll see the chunked transfer with delays in the server console.</p>
+        </div>
+    </div>
+
+    <script>
+        let counter = 0;
+        
+        function incrementCounter() {
+            counter++;
+            document.getElementById('counter').textContent = counter;
+            addLogEntry(`Counter incremented to: ${counter}`);
+        }
+        
+        function addLogEntry(message) {
+            const log = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.textContent = `[${timestamp}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function clearLog() {
+            const log = document.getElementById('log');
+            log.innerHTML = '<div>Log cleared</div>';
+        }
+        
+        // Set load time when page loads
+        window.onload = function() {
+            document.getElementById('loadTime').textContent = new Date().toLocaleString();
+            addLogEntry('Page fully loaded');
+        };
+        
+        // Simulate some activity
+        setInterval(() => {
+            if (Math.random() > 0.7) {
+                addLogEntry('Auto-log: Server is running smoothly');
+            }
+        }, 10000);
+    </script>
+</body>
+</html>
