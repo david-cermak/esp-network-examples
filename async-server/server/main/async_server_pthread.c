@@ -39,7 +39,8 @@ void *handle_client(void *arg) {
         size_t chunk = (size - offset > CHUNK_SIZE) ? CHUNK_SIZE : (size - offset);
         send(fd, data + offset, chunk, 0);
         printf("[Thread %ld] Sent %zu bytes\n", pthread_self(), chunk);
-        usleep(20000); // 200ms
+        // usleep(20000); // 200ms
+        sleep(1); // 1 second
     }
 
     close(fd);

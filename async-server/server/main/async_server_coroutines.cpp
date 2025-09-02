@@ -10,6 +10,107 @@
 #include <unistd.h>
 #include <sstream>
 #include <cstring>
+#include <queue>
+#include <functional>
+#include <mutex>
+#include <condition_variable>
+
+// === Event Loop for Coroutines ===
+class EventLoop {
+private:
+    struct ScheduledTask {
+        std::chrono::steady_clock::time_point when;
+        std::function<void()> task;
+        
+        bool operator>(const ScheduledTask& other) const {
+            return when > other.when;
+        }
+    };
+
+    std::thread worker_thread;
+    std::queue<std::function<void()>> immediate_tasks;
+    std::priority_queue<ScheduledTask, std::vector<ScheduledTask>, std::greater<ScheduledTask>> scheduled_tasks;
+    std::mutex tasks_mutex;
+    std::condition_variable tasks_cv;
+    bool running = false;
+
+public:
+    void start() {
+        running = true;
+        worker_thread = std::thread([this]() {
+            while (running) {
+                std::function<void()> task;
+                bool has_work = false;
+                
+                {
+                    std::unique_lock<std::mutex> lock(tasks_mutex);
+                    
+                    // Check for immediate tasks first
+                    if (!immediate_tasks.empty()) {
+                        task = std::move(immediate_tasks.front());
+                        immediate_tasks.pop();
+                        has_work = true;
+                    }
+                    // Check for scheduled tasks that are ready
+                    else if (!scheduled_tasks.empty()) {
+                        auto now = std::chrono::steady_clock::now();
+                        if (scheduled_tasks.top().when <= now) {
+                            task = std::move(scheduled_tasks.top().task);
+                            scheduled_tasks.pop();
+                            has_work = true;
+                        }
+                    }
+                    
+                    // If no immediate work, wait for either immediate tasks or scheduled tasks
+                    if (!has_work) {
+                        if (scheduled_tasks.empty()) {
+                            tasks_cv.wait(lock, [this]() { return !immediate_tasks.empty() || !running; });
+                        } else {
+                            auto next_task_time = scheduled_tasks.top().when;
+                            tasks_cv.wait_until(lock, next_task_time, [this]() { 
+                                return !immediate_tasks.empty() || !running; 
+                            });
+                        }
+                        continue; // Re-check after wait
+                    }
+                }
+                
+                if (task) task();
+            }
+        });
+    }
+
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(tasks_mutex);
+            running = false;
+        }
+        tasks_cv.notify_all();
+        if (worker_thread.joinable()) {
+            worker_thread.join();
+        }
+    }
+
+    void post(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(tasks_mutex);
+            immediate_tasks.push(std::move(task));
+        }
+        tasks_cv.notify_one();
+    }
+
+    void post_delayed(std::function<void()> task, std::chrono::milliseconds delay) {
+        auto when = std::chrono::steady_clock::now() + delay;
+        {
+            std::lock_guard<std::mutex> lock(tasks_mutex);
+            scheduled_tasks.push({when, std::move(task)});
+        }
+        tasks_cv.notify_one();
+    }
+};
+
+// Global event loop instance
+static EventLoop event_loop;
 
 // === Coroutine primitives ===
 struct Task {
@@ -22,30 +123,27 @@ struct Task {
     };
 };
 
-// Awaitable sleep
+// Awaitable sleep - now uses event loop instead of creating threads
 struct Sleep {
     std::chrono::milliseconds duration;
     bool await_ready() const noexcept { return false; }
     void await_suspend(std::coroutine_handle<> h) const {
-        std::thread([=] {
-            std::this_thread::sleep_for(duration);
-            h.resume();
-        }).detach();
+        event_loop.post_delayed([h]() { h.resume(); }, duration);
     }
     void await_resume() const noexcept {}
 };
 
-// Awaitable send wrapper
+// Awaitable send wrapper - now uses event loop instead of creating threads
 struct AsyncSend {
     int sock;
     const char* data;
     size_t size;
     bool await_ready() const noexcept { return false; }
     void await_suspend(std::coroutine_handle<> h) {
-        std::thread([=] {
+        event_loop.post([this, h]() {
             send(sock, data, size, 0);
             h.resume();
-        }).detach();
+        });
     }
     void await_resume() const noexcept {}
 };
@@ -80,6 +178,9 @@ Task handle_client(int client_sock, const char* file_data, size_t file_size) {
 // int main() {
 extern "C" void async_server(void) 
 {
+    // Start the event loop
+    event_loop.start();
+
     // Read file into memory
     const char* filename = "index.html";
     char* file_data;
@@ -116,7 +217,7 @@ extern "C" void async_server(void)
     addr.sin_port = htons(8080);
 
     bind(server_fd, (sockaddr*)&addr, sizeof(addr));
-    listen(server_fd, 10);
+    listen(server_fd, 5);
 
     std::cout << "Coroutine server listening on port 8080...\n";
 
@@ -129,4 +230,5 @@ extern "C" void async_server(void)
     }
     
     delete[] file_data;
+    event_loop.stop();
 }
