@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 
@@ -37,7 +39,7 @@ void *handle_client(void *arg) {
         size_t chunk = (size - offset > CHUNK_SIZE) ? CHUNK_SIZE : (size - offset);
         send(fd, data + offset, chunk, 0);
         printf("[Thread %ld] Sent %zu bytes\n", pthread_self(), chunk);
-        sleep(1); // simulate slow work
+        usleep(20000); // 200ms
     }
 
     close(fd);
@@ -45,10 +47,14 @@ void *handle_client(void *arg) {
     return NULL;
 }
 
-int main() {
-    int server_fd, client_fd;
+// int main() {
+void async_server(void) {
+    int server_fd;
+    int client_fd;
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
+#if 0
+
 
     // Read file into memory
     const char *filename = "index.html";
@@ -63,7 +69,13 @@ int main() {
     char *file_data = malloc(fsize);
     fread(file_data, 1, fsize, fp);
     fclose(fp);
-
+#else
+    extern const uint8_t index_html[]   asm("_binary_index_html_start");
+    extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
+    size_t fsize = index_html_end - index_html;
+    char *file_data = malloc(fsize);
+    memcpy(file_data, index_html, fsize);
+#endif
     // Create socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
@@ -90,6 +102,6 @@ int main() {
     }
 
     free(file_data);
-    close(server_fd);
-    return 0;
+    // close(server_fd);
+    // return 0;
 }

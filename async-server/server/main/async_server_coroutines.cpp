@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <sstream>
+#include <cstring>
 
 // === Coroutine primitives ===
 struct Task {
@@ -37,11 +38,12 @@ struct Sleep {
 // Awaitable send wrapper
 struct AsyncSend {
     int sock;
-    std::string data;
+    const char* data;
+    size_t size;
     bool await_ready() const noexcept { return false; }
     void await_suspend(std::coroutine_handle<> h) {
         std::thread([=] {
-            send(sock, data.data(), data.size(), 0);
+            send(sock, data, size, 0);
             h.resume();
         }).detach();
     }
@@ -49,19 +51,7 @@ struct AsyncSend {
 };
 
 // === Coroutine client handler ===
-Task handle_client(int client_sock, const std::string &filename) {
-    std::ifstream file(filename, std::ios::binary);
-    if (!file) {
-        std::cerr << "File not found: " << filename << "\n";
-        close(client_sock);
-        co_return;
-    }
-
-    // Get file size
-    file.seekg(0, std::ios::end);
-    size_t file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
+Task handle_client(int client_sock, const char* file_data, size_t file_size) {
     // Create HTTP headers
     std::stringstream headers;
     headers << "HTTP/1.1 200 OK\r\n";
@@ -71,19 +61,15 @@ Task handle_client(int client_sock, const std::string &filename) {
     headers << "\r\n";
 
     // Send headers
-    co_await AsyncSend{client_sock, headers.str()};
+    co_await AsyncSend{client_sock, headers.str().data(), headers.str().size()};
 
     // Send file content in chunks
-    std::vector<char> buffer(100);
-    while (file.good()) {
-        file.read(buffer.data(), buffer.size());
-        std::streamsize bytes_read = file.gcount();
-        if (bytes_read > 0) {
-            std::string chunk(buffer.data(), bytes_read);
-            co_await AsyncSend{client_sock, chunk};
-            co_await Sleep{std::chrono::milliseconds(200)};
-            std::cout << "[Coroutine " << client_sock << "] Sent " << bytes_read << " bytes\n";
-        }
+    const size_t chunk_size = 100;
+    for (size_t offset = 0; offset < file_size; offset += chunk_size) {
+        size_t chunk = (file_size - offset > chunk_size) ? chunk_size : (file_size - offset);
+        co_await AsyncSend{client_sock, file_data + offset, chunk};
+        co_await Sleep{std::chrono::milliseconds(200)};
+        std::cout << "[Coroutine " << client_sock << "] Sent " << chunk << " bytes\n";
     }
 
     close(client_sock);
@@ -91,7 +77,38 @@ Task handle_client(int client_sock, const std::string &filename) {
 }
 
 // === Main server loop ===
-int main() {
+// int main() {
+extern "C" void async_server(void) 
+{
+    // Read file into memory
+    const char* filename = "index.html";
+    char* file_data;
+    size_t file_size;
+    
+#if 0
+    // Read file from filesystem (Linux)
+    std::ifstream file(filename, std::ios::binary);
+    if (!file) {
+        std::cerr << "File not found: " << filename << "\n";
+        return;
+    }
+    
+    file.seekg(0, std::ios::end);
+    file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    file_data = new char[file_size];
+    file.read(file_data, file_size);
+    file.close();
+#else
+    // Use embedded data (ESP32)
+    extern const uint8_t index_html[] asm("_binary_index_html_start");
+    extern const uint8_t index_html_end[] asm("_binary_index_html_end");
+    file_size = index_html_end - index_html;
+    file_data = new char[file_size];
+    std::memcpy(file_data, index_html, file_size);
+#endif
+
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -107,7 +124,9 @@ int main() {
         int client_sock = accept(server_fd, nullptr, nullptr);
         if (client_sock >= 0) {
             std::cout << "New client: " << client_sock << "\n";
-            handle_client(client_sock, "index.html"); // fire-and-forget coroutine
+            handle_client(client_sock, file_data, file_size); // fire-and-forget coroutine
         }
     }
+    
+    delete[] file_data;
 }
