@@ -1,108 +1,81 @@
-Purpose of the Demo
+ASCON AEAD on ESP32 (UDP Demo)
 
-Explore Ascon lightweight cryptography on ESP32 in a non-TLS context.
+Overview
 
-Demonstrate authenticated encryption (AEAD) of small messages between two ESP32 tasks or devices, using Ascon instead of a full TLS stack.
+- Demonstrates lightweight authenticated encryption (AEAD) on ESP32 without TLS.
+- Sends small payloads over UDP between two ESP‑IDF apps: `sender/` and `receiver/`.
+- Focuses on integration feasibility, nonce handling, and on‑device performance.
 
-Provide a reference point for performance, code size, memory use, and integration feasibility of Ascon on constrained devices.
+Status
 
-Show how lightweight crypto can protect small IoT payloads (telemetry, sensor readings, control commands) where TLS may be too heavy.
+- AEAD providers: Ascon‑128 (ascon‑c), AES‑GCM‑128, ChaCha20‑Poly1305 (mbedTLS) implemented and selectable via Kconfig.
+- Transport: UDP working end‑to‑end with periodic messages from sender to receiver.
+- Nonce/AAD: 128‑bit nonce with a monotonically increasing 64‑bit counter; the counter is also used as AAD to bind sequence.
+- Logging: Hex dumps and microsecond timings for encrypt/decrypt paths.
+- Not included yet: replay window, key exchange, tests/vectors integration.
 
-Scope
+Layout
 
-Not a full TLS or standards-compliant secure channel.
+- `components/ascon/` — ascon‑c integration and thin wrapper API.
+- `components/crypto_aead/` — provider abstraction + Kconfig to select AEAD.
+- `sender/` — UDP sender app; prints `enc_us` timings.
+- `receiver/` — UDP receiver app; prints `dec_us` timings and plaintext on success.
 
-Symmetric-key AEAD only (no key exchange, no certificate handling).
+Build and Run
 
-Simple transport (UDP or raw TCP sockets).
+Prereqs: ESP‑IDF v5+, an ESP32 board, and Wi‑Fi credentials.
 
-Minimal error handling and replay protection (sequence counter as AAD).
+Sender
 
-Meant for evaluation and learning, not production deployment.
+1) `cd sender`
+2) `idf.py set-target esp32`
+3) `idf.py menuconfig`
+   - Example Connection Configuration: set Wi‑Fi SSID/PASS.
+   - Crypto AEAD: choose algorithm (default can be overridden by `sdkconfig.defaults`).
+4) `idf.py build flash monitor`
 
+Receiver
 
-Requirements
-Crypto Layer
+1) `cd receiver`
+2) `idf.py set-target esp32`
+3) `idf.py menuconfig`
+   - Example Connection Configuration: set Wi‑Fi SSID/PASS.
+   - Crypto AEAD: choose the same algorithm as the sender.
+4) `idf.py build flash monitor`
 
-Use the ascon-c
- reference/optimized library.
+Configuration Notes
 
-Include Ascon-128 AEAD for encryption/decryption.
+- Algorithm selection: Menu “Crypto AEAD” exposes Ascon‑128, AES‑GCM‑128, and ChaCha20‑Poly1305.
+- Key/nonce/tag sizes are exposed to apps via `AEAD_KEY_LEN`, `AEAD_NONCE_LEN`, `AEAD_TAG_LEN` in `crypto_aead.h`.
+- Receiver address/port: sender uses `RECEIVER_IP` and `RECEIVER_PORT` defaults (192.168.0.35:3333). Adjust in `sender/main/sender.c` or define `CONFIG_ASCON_RECEIVER_IP` and `CONFIG_ASCON_RECEIVER_PORT` via build flags.
+- Listen port: receiver uses `LISTEN_PORT` default 3333. Adjust in `receiver/main/receiver.c` or define `CONFIG_ASCON_LISTEN_PORT` via build flags.
+- Nonce management: 64‑bit big‑endian counter in the high bytes of a 128‑bit nonce. Ensure uniqueness per key in any adaptation.
 
-Optional: include Ascon-Hash/XOF for integrity checks or device fingerprinting.
+Performance
 
-Must enforce nonce uniqueness per key (e.g., counter or random with safeguard).
+- The table below shows measured encrypt/decrypt timing for a short payload on ESP32; use it as a relative comparison across providers.
 
-Project Setup
+| AEAD | enc/us | dec/us |
+|------|--------|--------|
+| Ascon-128a | 195 +/- 2 | 183 +/- 2 |
+| AES-GCM-128 | 595 +/- 18 | 560 +/- 15 |
+| ChaCha20-Poly1305 | 530 +/- 12 | 510 +/- 16 |
 
-Target: ESP32 (ESP-IDF project).
+Scope and Caveats
 
-Add ascon-c as a component/submodule.
-
-Build with either the generic C or asm_esp32 backend for performance.
-
-Provide CMake / component.mk integration for ESP-IDF.
-
-Sender Task
-
-Take plaintext payload (e.g., “Hello from ESP32”).
-
-Construct nonce.
-
-Encrypt with Ascon-AEAD (key, nonce, optional AAD).
-
-Send (nonce || ciphertext || tag) over UDP/TCP.
-
-Receiver Task
-
-Receive packet.
-
-Parse nonce, ciphertext, tag.
-
-Decrypt and verify tag.
-
-On success, output plaintext; on failure, discard.
-
-Support Code
-
-Simple random or counter-based nonce generator.
-
-Minimal network wrapper for sending/receiving packets.
-
-Logging (UART/serial output) for debugging.
-
-Optional: performance timers (cycle count, latency).
-
-Deliverables
-
-ESP-IDF Project Skeleton
-
-main.c with sender/receiver demo.
-
-Integrated Ascon component.
-
-Configurable key, nonce source.
-
-README
-
-Build & flash instructions.
-
-Key points on nonce management and limitations.
-
-Performance notes (code size, cycles, memory).
+- Symmetric‑key AEAD only; no key exchange or certificates.
+- Minimal error handling; no replay protection beyond binding a counter in AAD.
+- Intended for evaluation/learning, not production.
 
 Next Steps
 
-Implement sender/receiver skeleton.
+- Add replay window and monotonic counter persistence.
+- Add Unity tests and known‑good test vectors for ascon and providers.
+- Optional: include Ascon‑Hash/XOF example (e.g., firmware checksum/fingerprint).
+- Explore COSE/OSCORE style lightweight secure messaging on top of AEAD.
 
-Run performance tests on ESP32 (measure encryption/decryption throughput).
+Notes for Contributors
 
-Evaluate code size and RAM use.
-
-Optionally extend to:
-
-Replay protection (sequence numbers).
-
-Hash/XOF demo (firmware checksum).
-
-Integration with COSE/OSCORE lightweight secure messaging.
+- Coding: C (4‑space indent), headers use `#pragma once`, avoid VLAs.
+- Formatting: run `tools/format.sh` if present; keep files UTF‑8 with LF.
+- Commits: Conventional Commits style (`feat:`, `fix:`, `perf:`, `test:`, `docs:`).
