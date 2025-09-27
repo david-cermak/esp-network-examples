@@ -7,3 +7,6 @@
 [submodule "avahi-test/main/avahi"]
 	path = avahi-test/main/avahi
 	url = https://github.com/avahi/avahi.git
+[submodule "ascon/components/ascon/ascon-c"]
+	path = ascon/components/ascon/ascon-c
+	url = https://github.com/ascon/ascon-c

@@ -1,0 +1,24 @@
+menu "Crypto AEAD"
+
+choice AEAD_IMPL
+    prompt "Select AEAD implementation"
+    default AEAD_IMPL_ASCON
+    help
+        Choose which AEAD algorithm/provider to use for the demo.
+
+config AEAD_IMPL_ASCON
+    bool "Ascon-128 AEAD (ascon-c)"
+
+config AEAD_IMPL_AES_GCM
+    bool "AES-GCM-128 (mbedTLS)"
+
+config AEAD_IMPL_CHACHA20_POLY1305
+    bool "ChaCha20-Poly1305 (mbedTLS)"
+
+config AEAD_IMPL_MOCK
+    bool "Mock (insecure)"
+
+endchoice
+
+endmenu
+
