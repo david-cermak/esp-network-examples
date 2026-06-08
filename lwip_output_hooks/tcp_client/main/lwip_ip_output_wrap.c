@@ -37,11 +37,15 @@ extern err_t __real_ip4_output_if(struct pbuf *p, const ip4_addr_t *src, const i
 
 static err_t ip4_output_filter(const ip4_addr_t *src, const ip4_addr_t *dest, u8_t proto)
 {
-    char src_str[IP4ADDR_STRLEN_MAX];
-    char dest_str[IP4ADDR_STRLEN_MAX];
+    char src_str[IP4ADDR_STRLEN_MAX] = {0};
+    char dest_str[IP4ADDR_STRLEN_MAX] = {0};
 
-    ip4addr_ntoa_r(src, src_str, sizeof(src_str));
-    ip4addr_ntoa_r(dest, dest_str, sizeof(dest_str));
+    if (src != NULL) {
+        ip4addr_ntoa_r(src, src_str, sizeof(src_str));
+    }
+    if (dest != NULL) {
+        ip4addr_ntoa_r(dest, dest_str, sizeof(dest_str));
+    }
     ESP_LOGI(TAG, "IPv4 output: proto=%u src=%s dest=%s", proto, src_str, dest_str);
 
 #if CONFIG_EXAMPLE_IP4_OUTPUT_DROP_TCP
@@ -74,11 +78,15 @@ extern err_t __real_ip6_output_if(struct pbuf *p, const ip6_addr_t *src, const i
 
 static err_t ip6_output_filter(const ip6_addr_t *src, const ip6_addr_t *dest, u8_t nexth)
 {
-    char src_str[IP6ADDR_STRLEN_MAX];
-    char dest_str[IP6ADDR_STRLEN_MAX];
+    char src_str[IP6ADDR_STRLEN_MAX] = {0};
+    char dest_str[IP6ADDR_STRLEN_MAX] = {0};
 
-    ip6addr_ntoa_r(src, src_str, sizeof(src_str));
-    ip6addr_ntoa_r(dest, dest_str, sizeof(dest_str));
+    if (src != NULL) {
+        ip6addr_ntoa_r(src, src_str, sizeof(src_str));
+    }
+    if (dest != NULL) {
+        ip6addr_ntoa_r(dest, dest_str, sizeof(dest_str));
+    }
     ESP_LOGI(TAG, "IPv6 output: nexth=%u src=%s dest=%s", nexth, src_str, dest_str);
 
 #if CONFIG_EXAMPLE_IP6_OUTPUT_DROP_TCP
