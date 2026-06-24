@@ -101,3 +101,4 @@ idf_component_register(SRCS         ${libplctag_SRCS}
 
 target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")
 target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-char-subscripts")
+target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-incompatible-pointer-types")
